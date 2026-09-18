@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureChat - Créer un compte</title>
+
+    <!-- CDN Font Awesome pour les icônes vectorielles -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <link rel="stylesheet" href="signup.css">
+</head>
+<body>
+
+    <main class="auth-container">
+
+        <!-- Partie gauche : Présentation -->
+        <section class="auth-introduction">
+
+            <div class="brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-user-plus"></i>
+                </div>
+
+                <h1>Secure<span>Chat</span></h1>
+
+                <p>Rejoignez le réseau confidentiel</p>
+            </div>
+
+            <p class="description">
+                Créez votre compte en quelques secondes et générez votre paire de clés de chiffrement privée. Vos données restent uniquement entre vos mains.
+            </p>
+
+            <div class="security-badge">
+                <i class="fa-solid fa-key"></i> Clé de chiffrement unique générée localement
+            </div>
+
+            <div class="security-illustration">
+                <div class="phone phone-one">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div class="phone phone-two">
+                    <i class="fa-solid fa-lock"></i>
+                </div>
+                <div class="shield">
+                    <i class="fa-solid fa-check-double"></i>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Partie droite : Formulaire d'inscription -->
+        <section class="auth-form-container">
+
+            <div class="auth-form">
+
+                <h2>Créer un compte</h2>
+
+                <p class="form-subtitle">
+                    Inscrivez-vous gratuitement pour commencer
+                </p>
+
+                <form>
+
+                    <label for="username">Nom d'utilisateur</label>
+                    <div class="input-wrapper">
+                        <i class="fa-regular fa-user input-icon"></i>
+                        <input
+                            type="text"
+                            id="username"
+                            placeholder="ex: ben_beni"
+                            required
+                        >
+                    </div>
+
+                    <label for="email">Adresse e-mail</label>
+                    <div class="input-wrapper">
+                        <i class="fa-regular fa-envelope input-icon"></i>
+                        <input
+                            type="email"
+                            id="email"
+                            placeholder="nom@exemple.com"
+                            required
+                        >
+                    </div>
+
+                    <label for="password">Mot de passe</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock input-icon"></i>
+                        <input
+                            type="password"
+                            id="password"
+                            placeholder="Au moins 8 caractères"
+                            required
+                        >
+                    </div>
+
+                    <label for="confirm-password">Confirmer le mot de passe</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-shield-cat input-icon"></i>
+                        <input
+                            type="password"
+                            id="confirm-password"
+                            placeholder="Répétez votre mot de passe"
+                            required
+                        >
+                    </div>
+
+                    <div class="terms">
+                        <input type="checkbox" id="terms" required>
+                        <label for="terms">
+                            J'accepte les <a href="#">conditions d'utilisation</a> et la <a href="#">politique de confidentialité</a>.
+                        </label>
+                    </div>
+
+                    <button type="submit" class="primary-button">
+                        S'inscrire <i class="fa-solid fa-user-check"></i>
+                    </button>
+
+                </form>
+
+                <p class="account-link">
+                    Vous avez déjà un compte ?
+                    <a href="login.html">Se connecter</a>
+                </p>
+
+                <div class="separator">
+                    <span>ou s'inscrire avec</span>
+                </div>
+
+                <div class="social-login">
+                    <button type="button" title="Inscription avec Google">
+                        <i class="fa-brands fa-google"></i>
+                    </button>
+                    <button type="button" title="Inscription avec GitHub">
+                        <i class="fa-brands fa-github"></i>
+                    </button>
+                </div>
+
+                <div class="secure-login">
+                    <i class="fa-solid fa-user-shield"></i> Données chiffrées & protocole sécurisé
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+    <!-- SDKs Firebase version Compat -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <!-- Fichier JS Inscription -->
+    <script src="signup.js"></script>
+
+</body>
+</html>

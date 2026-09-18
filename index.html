@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SecureChat - Dashboard</title>
+    <!-- CDN PeerJS pour gérer WebRTC facilement -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- CDN Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Feuille de style CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="dashboard">
+
+        <!-- 1. SIDEBAR (MENU GAUCHE) -->
+        <aside class="sidebar">
+
+            <div class="sidebar-brand">
+                <div class="small-logo">
+                    <i class="fa-solid fa-lock"></i>
+                </div>
+                <h2>Secure<span>Chat</span></h2>
+            </div>
+
+            <nav class="sidebar-menu">
+                <a href="#" class="menu-item active" data-tab="conversations">
+                    <i class="fa-regular fa-comment-dots"></i>
+                    <span>Conversations</span>
+                    <strong id="totalUnreadBadge" style="display: none;">0</strong>
+                </a>
+
+                <a href="#" class="menu-item" data-tab="contacts">
+                    <i class="fa-regular fa-address-book"></i>
+                    <span>Contacts</span>
+                </a>
+
+                <a href="#" class="menu-item" data-tab="devices">
+                    <i class="fa-solid fa-laptop-medical"></i>
+                    <span>Appareils</span>
+                </a>
+
+                <a href="#" class="menu-item" data-tab="pinned">
+                    <i class="fa-regular fa-bookmark"></i>
+                    <span>Messages épinglés</span>
+                </a>
+
+                <a href="#" class="menu-item" data-tab="settings">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>Paramètres</span>
+                </a>
+            </nav>
+
+            <!-- Profil de l'utilisateur connecté -->
+            <div class="sidebar-profile" id="userProfileTrigger">
+                <div class="profile-avatar">--</div>
+                <div class="profile-info">
+                    <h4>Chargement...</h4>
+                    <p><span class="online-dot"></span> En ligne</p>
+                </div>
+
+                <button class="profile-more" aria-label="Menu profil" type="button">
+                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                </button>
+            </div>
+
+        </aside>
+
+        <!-- 2. COLONNE MILIEU : LISTE DES CONVERSATIONS -->
+        <section class="conversation-list tab-view tab-conversations">
+            <header class="conversation-header">
+    <!--  Bouton Burger à ajouter juste ici -->
+
+    <div class="search-box">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="text" placeholder="Rechercher une conversation...">
+    </div>
+
+    <button class="new-message" title="Nouvelle conversation" type="button">
+        <i class="fa-solid fa-pen-to-square"></i>
+    </button>
+</header>
+
+            <!-- Firebase injecte la liste dynamique ici -->
+            <div class="conversations"></div>
+        </section>
+
+        <!-- 3. COLONNE DROITE : ZONE DE CHAT -->
+        <section class="chat-area tab-view tab-conversations">
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 20px; background-color: #f8fafc;">
+                <img src="" alt="SecureChat" style="max-width: 350px; width: 100%; height: auto; margin-bottom: 20px; object-fit: contain;">
+                <h2 style="font-size: 20px; color: #1e293b; margin-bottom: 8px;">Bienvenue sur SecureChat</h2>
+                <p style="font-size: 13px; color: #64748b; max-width: 320px;">
+                    Sélectionnez un contact dans la liste à gauche pour lancer la conversation. 
+                </p>
+            </div>
+        </section>
+
+        <!-- TAB 1: CONTACTS -->
+<section id="tab-contacts" style="display: none; padding: 25px; max-width: 700px; margin: 0 auto;">
+    <h2 style="font-size: 20px; color: #0f172a; margin-bottom: 20px;">
+        <i class="fa-solid fa-address-book" style="color: #2563eb; margin-right: 8px;"></i> Vos Contacts 👥
+    </h2>
+    <div id="contacts-list">
+        <!-- La liste des contacts s'affichera automatiquement ici -->
+    </div>
+</section>
+
+<!-- TAB 2: APPAREILS & SÉCURITÉ -->
+<section id="tab-devices" class="tab-content" style="display: none; padding: 25px; max-width: 700px; margin: 0 auto;">
+    <h2 style="font-size: 20px; color: #0f172a; margin-bottom: 20px;">
+        <i class="fa-solid fa-shield-halved" style="color: #2563eb; margin-right: 8px;"></i> Appareils & Sécurité 🛡️
+    </h2>
+    <div style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <h3 style="font-size: 15px; color: #1e293b; margin-bottom: 8px;">Clé publique du terminal</h3>
+        <p style="font-size: 13px; color: #64748b; margin-bottom: 12px;">Cette clé sert à chiffrer vos messages de bout en bout (E2EE) :</p>
+        <code id="publicKeyDisplay" style="display: block; background: #f1f5f9; padding: 12px; border-radius: 8px; font-size: 11px; word-break: break-all; color: #334155;">
+            Chargement de la clé...
+        </code>
+    </div>
+</section>
+
+<!-- TAB 3: PARAMÈTRES -->
+<section id="tab-settings" style="display: none; padding: 25px; max-width: 700px; margin: 0 auto;">
+    <h2 style="font-size: 20px; color: #0f172a; margin-bottom: 20px;">
+        <i class="fa-solid fa-gear" style="color: #2563eb; margin-right: 8px;"></i> Paramètres 
+    </h2>
+    
+    <!-- Informations Compte -->
+    <div style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <h3 style="font-size: 15px; color: #1e293b; margin-bottom: 8px;">
+            <i class="fa-regular fa-user" style="margin-right: 6px;"></i> Compte utilisateur
+        </h3>
+        <p style="font-size: 13px; color: #64748b; margin: 0;">
+            Adresse e-mail : <strong id="settingsEmail" style="color: #0f172a;">Chargement...</strong>
+        </p>
+    </div>
+
+    <!-- Confidentialité -->
+    <div style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <h3 style="font-size: 15px; color: #1e293b; margin-bottom: 8px;">
+            <i class="fa-solid fa-lock" style="margin-right: 6px;"></i> Confidentialité & Chiffrement
+        </h3>
+        <p style="font-size: 13px; color: #64748b; margin: 0;">
+            Toutes vos conversations sont sécurisées grâce au chiffrement asymétrique RSA/AES. 
+        </p>
+    </div>
+</section>
+    </main>
+
+    <!-- POPUP / MODAL PROFIL -->
+    <div id="profileModal" class="modal-overlay" style="display: none;">
+        <div class="modal-card">
+            <button id="closeModalBtn" class="modal-close" type="button">&times;</button>
+            <div class="modal-header">
+                <i class="fa-solid fa-circle-user avatar-placeholder"></i>
+                <h3 id="modalUsername">Nom Utilisateur</h3>
+                <p id="modalEmail">email@exemple.com</p>
+            </div>
+            <div class="modal-actions">
+                <button id="switchAccountBtn" class="modal-btn secondary" type="button">
+                    <i class="fa-solid fa-user-gear"></i> Se connecter à un autre compte
+                </button>
+                <button id="logoutBtn" class="modal-btn danger" type="button">
+                    <i class="fa-solid fa-right-from-bracket"></i> Se déconnecter
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SDKs Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+     
+    <!-- Module de chiffrement E2EE -->
+    <script src="crypto-helper.js"></script>
+
+    <!-- Fichier JS Principal -->
+    <script src="app.js"></script>
+    <!-- Modale d'appel Vocal/Vidéo -->
+<div id="callModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+    <div style="background: #ffffff; padding: 25px; border-radius: 16px; width: 90%; max-width: 500px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
+        <h3 id="callStatus" style="font-size: 18px; color: #0f172a; margin-bottom: 15px;">Appel en cours... </h3>
+        
+        <!-- Conteneur Vidéo -->
+        <div id="videoContainer" style="display: none; position: relative; width: 100%; height: 260px; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 20px;">
+            <video id="remoteVideo" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+            <video id="localVideo" autoplay playsinline muted style="position: absolute; bottom: 10px; right: 10px; width: 100px; height: 75px; object-fit: cover; border-radius: 8px; border: 2px solid white;"></video>
+        </div>
+
+        <!-- Audio seul si vidéo désactivée -->
+        <audio id="remoteAudio" autoplay></audio>
+
+        <!-- Boutons d'action -->
+        <div style="display: flex; gap: 15px; justify-content: center; margin-top: 15px;">
+            <button id="acceptCallBtn" style="display: none; background: #16a34a; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                <i class="fa-solid fa-phone"></i> Accepter
+            </button>
+            <button id="endCallBtn" style="background: #dc2626; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                <i class="fa-solid fa-phone-slash"></i> Raccrocher
+            </button>
+        </div>
+    </div>
+</div>
+</body>
+</html>

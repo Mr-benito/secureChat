@@ -1,0 +1,866 @@
+/* =========================================
+   1. RESET & BASES 
+========================================= */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #050816;
+    color: #172033;
+}
+
+.dashboard {
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 245px 360px 1fr;
+    background: #ffffff;
+    overflow: hidden;
+}
+
+/* =========================================
+   2. SIDEBAR (MENU LATÉRAL) 
+========================================= */
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(160deg, #101d45, #07132f);
+    color: #ffffff;
+    padding: 25px 15px;
+}
+
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 10px 35px;
+}
+
+.small-logo {
+    width: 35px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #315cf0;
+    border-radius: 10px;
+    color: #ffffff;
+    font-size: 16px;
+}
+
+.sidebar-brand h2 {
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.sidebar-brand h2 span {
+    color: #5278ff;
+}
+
+.sidebar-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    color: #d0d8ef;
+    text-decoration: none;
+    border-radius: 8px;
+    font-size: 13px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.menu-item i {
+    width: 20px;
+    font-size: 15px;
+    text-align: center;
+}
+
+.menu-item span {
+    flex: 1;
+}
+
+/* Badge global (messages non lus)  */
+.menu-item strong#totalUnreadBadge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: #e11d48;
+    font-size: 11px;
+    font-weight: bold;
+    color: #ffffff;
+    line-height: 1;
+}
+
+.menu-item:hover,
+.menu-item.active {
+    background: #263b78;
+    color: #ffffff;
+}
+
+.sidebar-profile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: auto;
+    padding: 15px 10px 5px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    cursor: pointer;
+}
+
+.profile-avatar {
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #4062e8;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.profile-info h4 {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.profile-info p {
+    margin-top: 2px;
+    color: #aab6d7;
+    font-size: 11px;
+}
+
+.online-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 5px;
+    background: #27d68b;
+    border-radius: 50%;
+}
+
+.profile-more {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: #b9c4df;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 5px;
+}
+
+/* =========================================
+   3. LISTE DES CONVERSATIONS 💬
+========================================= */
+.conversation-list {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #e4e8f0;
+    background: #ffffff;
+    height: 100%;
+    overflow: hidden;
+}
+
+.conversation-header {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 20px 18px;
+    border-bottom: 1px solid #e8ebf2;
+}
+
+.search-box {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 40px;
+    padding: 0 14px;
+    border: 1px solid #e1e6ef;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.search-box i {
+    color: #8fa0b5;
+    font-size: 14px;
+}
+
+.search-box input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 12px;
+    color: #172033;
+}
+
+.new-message {
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 8px;
+    background: #3457ef;
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.new-message:hover {
+    background: #2544d0;
+}
+
+.conversations {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.conversation {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px 18px;
+    border-bottom: 1px solid #f0f2f6;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.conversation:hover,
+.active-conversation {
+    background: #f1f4ff;
+}
+
+.avatar {
+    flex-shrink: 0;
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+/* Gradients des Avatars  */
+.alice { background: linear-gradient(135deg, #d9958d, #754c57); }
+.patrick { background: linear-gradient(135deg, #5a9a75, #275b43); }
+.marie { background: linear-gradient(135deg, #b3c9d8, #4f718a); }
+.thomas { background: linear-gradient(135deg, #9a806d, #514136); }
+.julie { background: linear-gradient(135deg, #c79b9e, #754e5a); }
+.group { background: linear-gradient(135deg, #4f73d8, #2a4193); font-size: 15px; }
+
+.conversation-info {
+    min-width: 0;
+    flex: 1;
+}
+
+.conversation-info h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #202a40;
+}
+
+.conversation-info p {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: #7b8497;
+    font-size: 12px;
+}
+
+.conversation-meta {
+    align-self: flex-start;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    color: #8a93a5;
+    font-size: 11px;
+}
+
+.unread {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 10px;
+    background: #3158ed;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+/* =========================================
+   4. ZONE DE CHAT PRINCIPALE 
+========================================= */
+.chat-area {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-width: 0;
+    background: #ffffff;
+    overflow: hidden;
+    position: relative;
+}
+
+.chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 70px;
+    padding: 0 25px;
+    border-bottom: 1px solid #e6eaf1;
+    flex-shrink: 0;
+}
+
+.chat-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.chat-user h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 3px;
+}
+
+.chat-user p {
+    color: #7a8497;
+    font-size: 11px;
+}
+
+.chat-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.chat-actions button {
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    color: #536078;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.chat-actions button:hover {
+    background: #f0f3fa;
+}
+
+/* Bouton Retour Mobile (Flèche ⬅️) */
+.btn-back-mobile {
+    display: none;
+    background: transparent;
+    border: none;
+    color: #475569;
+    font-size: 18px;
+    padding: 6px 12px 6px 0;
+    cursor: pointer;
+}
+
+/* Zone des messages scrollable 📜 */
+.messages {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px 25px;
+    overflow-y: auto;
+}
+
+.encryption-notice {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: fit-content;
+    max-width: 90%;
+    margin: 10px auto 18px;
+    padding: 10px 18px;
+    border-radius: 8px;
+    background: #edf8f2;
+    border: 1px solid #d2f0df;
+    color: #2a8960;
+    font-size: 12px;
+}
+
+.encryption-notice i { font-size: 16px; }
+.encryption-notice p { margin-top: 2px; font-size: 11px; opacity: 0.85; }
+
+.date-separator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 5px 20px 15px;
+}
+
+.date-separator span {
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: #f0f2f7;
+    color: #7c8597;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.message {
+    position: relative;
+    max-width: 65%;
+    padding: 10px 14px 22px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.message time {
+    position: absolute;
+    right: 10px;
+    bottom: 4px;
+    font-size: 10px;
+    color: #9aa2b3;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.received {
+    align-self: flex-start;
+    background: #f0f2f7;
+    color: #263047;
+    border-bottom-left-radius: 2px;
+}
+
+.sent {
+    align-self: flex-end;
+    background: #3158ed;
+    color: #ffffff;
+    border-bottom-right-radius: 2px;
+}
+
+.sent time { color: #d9e1ff; }
+.status-read { color: #7188f0; }
+.sent .status-read { color: #93b3ff; }
+
+/* Formulaire d'envoi fixe en bas ✉️ */
+.message-form {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 25px 20px;
+    padding: 6px 10px;
+    border: 1px solid #dfe5ef;
+    border-radius: 10px;
+    background: #ffffff;
+}
+
+.message-form input {
+    flex: 1;
+    min-width: 0;
+    height: 38px;
+    border: none;
+    outline: none;
+    font-size: 13px;
+    color: #172033;
+}
+
+.message-form button {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s, background 0.2s;
+}
+
+.attachment-button,
+.emoji-button {
+    width: 34px;
+    height: 34px;
+    color: #6b7890;
+    font-size: 16px;
+}
+
+.attachment-button:hover,
+.emoji-button:hover {
+    color: #3158ed;
+}
+
+.send-button {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: #3158ed !important;
+    color: #ffffff !important;
+    font-size: 14px;
+}
+
+.send-button i { color: #ffffff !important; }
+.send-button:hover { background: #2347d9 !important; }
+
+/* =========================================
+   5. POPUP STICKERS & SÉLECTEUR EMOJIS 
+========================================= */
+.sticker-picker-popup {
+    display: none;
+    position: absolute;
+    bottom: 75px;
+    right: 25px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    width: 260px;
+    padding: 12px;
+    z-index: 100;
+}
+
+.sticker-picker-popup.active {
+    display: block;
+}
+
+.sticker-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 5px;
+}
+
+.sticker-header button {
+    background: none;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    color: #94a3b8;
+}
+
+.sticker-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+.sticker-item {
+    font-size: 22px;
+    text-align: center;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    transition: transform 0.1s ease, background 0.2s ease;
+}
+
+.sticker-item:hover {
+    background: #f1f5f9;
+    transform: scale(1.2);
+}
+
+/* =========================================
+   6. FENÊTRES MODALES 
+========================================= */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    width: 320px;
+    position: relative;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    text-align: center;
+}
+
+.modal-close {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #666;
+}
+
+.modal-header .avatar-placeholder {
+    font-size: 50px;
+    color: #4f46e5;
+    margin-bottom: 10px;
+}
+
+.modal-header h3 {
+    margin: 5px 0 2px 0;
+    font-size: 18px;
+    color: #111827;
+}
+
+.modal-header p {
+    margin: 0 0 20px 0;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.modal-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.modal-btn {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: 0.2s;
+}
+
+.modal-btn.secondary { background: #f3f4f6; color: #374151; }
+.modal-btn.secondary:hover { background: #e5e7eb; }
+.modal-btn.danger { background: #fee2e2; color: #991b1b; }
+.modal-btn.danger:hover { background: #fca5a5; }
+
+/* =========================================
+   7. ADAPTATION RESPONSIVE (MOBILES & TABLETTES) 
+========================================= */
+
+/* Tablettes moyennes (Sous 1100px) */
+@media (max-width: 1100px) {
+    .dashboard {
+        grid-template-columns: 210px 300px 1fr;
+    }
+}
+
+/* Tablettes étroites (Sous 850px) - Menu réduit 📑 */
+@media (max-width: 850px) {
+    .dashboard {
+        grid-template-columns: 70px 280px 1fr;
+    }
+
+    .sidebar-brand h2,
+    .menu-item span,
+    .menu-item strong,
+    .sidebar-profile .profile-info,
+    .profile-more {
+        display: none;
+    }
+
+    .sidebar { padding: 20px 8px; }
+    .sidebar-brand { justify-content: center; padding: 0 0 30px; }
+    .menu-item { justify-content: center; padding: 12px; }
+    .sidebar-profile { justify-content: center; }
+}
+
+/* Écrans Mobiles (Sous 768px - Mode WhatsApp)  */
+/* =========================================
+   ADAPTATION MOBILE STRICTE 
+========================================= */
+@media (max-width: 768px) {
+    /* 1. Cache l'image/écran d'illustration d'accueil sur mobile */
+    .chat-welcome-screen,
+    .illustration-container,
+    .welcome-placeholder {
+        display: none !important;
+    }
+
+    /* 2. La liste de conversations s'affiche directement en plein écran  */
+    .conversation-list {
+        display: flex !important;
+        width: 100% !important;
+        height: 100vh !important;
+        border-right: none;
+    }
+
+    /* 3. Masque la zone de chat au chargement initial */
+    .chat-area {
+        display: none !important;
+        width: 100% !important;
+        height: 100vh !important;
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 1000;
+        background: #ffffff;
+    }
+
+    /* Quand une conversation est ouverte  */
+    .chat-area.active {
+        display: flex !important;
+        flex-direction: column;
+    }
+
+    /* 4. Affiche le bouton retour sur mobile ⬅ */
+    .btn-back-mobile {
+        display: inline-block !important;
+    }
+
+    /* 5. Bouton Menu Burger  (en haut de la liste de conversations) */
+    .btn-burger-mobile {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 38px;
+        background: #f1f5f9;
+        border: none;
+        border-radius: 8px;
+        font-size: 18px;
+        color: #1e293b;
+        cursor: pointer;
+    }
+}
+
+/* Cache le burger sur grands écrans 🖥️ */
+.btn-burger-mobile {
+    display: none;
+}
+/* =========================================
+   GESTION D'AFFICHAGE DES ONGLETS (LAYOUT DESKTOP) 
+========================================= */
+
+/* 1. Sur Desktop, la grille conserve la Sidebar normale de 245px */
+.dashboard.tab-active {
+    grid-template-columns: 245px 1fr !important;
+}
+
+/* S'assure que les libellés et éléments de la sidebar restent parfaitement visibles */
+.dashboard.tab-active .sidebar-brand h2,
+.dashboard.tab-active .menu-item span,
+.dashboard.tab-active .menu-item strong,
+.dashboard.tab-active .sidebar-profile .profile-info,
+.dashboard.tab-active .profile-more {
+    display: flex !important;
+}
+
+.dashboard.tab-active .sidebar {
+    padding: 25px 15px !important;
+}
+
+.dashboard.tab-active .sidebar-brand {
+    justify-content: flex-start !important;
+    padding: 0 10px 35px !important;
+}
+
+.dashboard.tab-active .menu-item {
+    justify-content: flex-start !important;
+    padding: 12px 14px !important;
+}
+
+/* 2. Masque la liste des conversations et la zone de chat sur les autres onglets */
+.dashboard.tab-active .conversation-list,
+.dashboard.tab-active .chat-area {
+    display: none !important;
+}
+
+/* 3. L'onglet actif occupe tout le reste de l'écran */
+.tab-content {
+    display: none;
+    padding: 25px;
+    width: 100%;
+    height: 100vh;
+    overflow-y: auto;
+    background: #ffffff;
+}
+
+.tab-content.active {
+    display: block !important;
+}
+
+/* =========================================
+   REDUCTION MOBILE UNIQUEMENT (Sous 850px) 📱
+========================================= */
+@media (max-width: 850px) {
+    .dashboard,
+    .dashboard.tab-active {
+        grid-template-columns: 70px 1fr !important;
+    }
+
+    .sidebar-brand h2,
+    .menu-item span,
+    .menu-item strong,
+    .sidebar-profile .profile-info,
+    .profile-more,
+    .dashboard.tab-active .sidebar-brand h2,
+    .dashboard.tab-active .menu-item span,
+    .dashboard.tab-active .menu-item strong,
+    .dashboard.tab-active .sidebar-profile .profile-info,
+    .dashboard.tab-active .profile-more {
+        display: none !important;
+    }
+
+    .sidebar,
+    .dashboard.tab-active .sidebar {
+        padding: 20px 8px !important;
+    }
+
+    .sidebar-brand,
+    .dashboard.tab-active .sidebar-brand {
+        justify-content: center !important;
+        padding: 0 0 30px !important;
+    }
+
+    .menu-item,
+    .dashboard.tab-active .menu-item {
+        justify-content: center !important;
+        padding: 12px !important;
+    }
+}

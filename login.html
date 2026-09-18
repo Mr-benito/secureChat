@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureChat - Connexion</title>
+
+    <!-- CDN Font Awesome pour les icônes vectorielles -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <link rel="stylesheet" href="login.css">
+</head>
+<body>
+
+    <main class="auth-container">
+
+        <!-- Partie gauche : Présentation -->
+        <section class="auth-introduction">
+
+            <div class="brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-lock"></i>
+                </div>
+
+                <h1>Secure<span>Chat</span></h1>
+
+                <p>Messagerie chiffrée de bout en bout</p>
+            </div>
+
+            <p class="description">
+                Vos messages sont protégés par un chiffrement de bout en bout.
+                Personne, pas même nous, ne peut lire vos échanges.
+            </p>
+
+            <div class="security-badge">
+                <i class="fa-solid fa-shield-halved"></i> Sécurité. Confidentialité. Liberté.
+            </div>
+
+            <div class="security-illustration">
+                <div class="phone phone-one">
+                    <i class="fa-solid fa-key"></i>
+                </div>
+                <div class="phone phone-two">
+                    <i class="fa-solid fa-comments"></i>
+                </div>
+                <div class="shield">
+                    <i class="fa-solid fa-user-shield"></i>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Partie droite : Formulaire de connexion -->
+        <section class="auth-form-container">
+
+            <div class="auth-form">
+
+                <h2>Bienvenue !</h2>
+
+                <p class="form-subtitle">
+                    Connectez-vous à votre compte
+                </p>
+
+                <form>
+                    <!-- À placer au-dessus ou au début de <form> -->
+                    <div id="errorMessage" class="error-message" style="display: none;"></div>
+
+                    <label for="email">Adresse e-mail ou nom d'utilisateur</label>
+                    <div class="input-wrapper">
+                        <i class="fa-regular fa-envelope input-icon"></i>
+                        <input
+                            type="text"
+                            id="email"
+                            placeholder="nom@exemple.com"
+                            required
+                        >
+                    </div>
+
+                    <label for="password">Mot de passe</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock input-icon"></i>
+                        <input
+                            type="password"
+                            id="password"
+                            placeholder="••••••••••••"
+                            required
+                        >
+                    </div>
+
+                    <a href="#" class="forgot-password">Mot de passe oublié ?</a>
+
+                    <div class="remember">
+                        <input type="checkbox" id="remember">
+                        <label for="remember">Se souvenir de moi</label>
+                    </div>
+
+                    <button type="submit" class="primary-button">
+                        Se connecter <i class="fa-solid fa-arrow-right-to-bracket"></i>
+                    </button>
+
+                </form>
+
+                <p class="account-link">
+                    Pas encore de compte ?
+                    <a href="signup.html">Créer un compte</a>
+                </p>
+
+                <div class="separator">
+                    <span>ou continuer avec</span>
+                </div>
+
+                <div class="social-login">
+                    <button type="button" title="Connexion avec Google">
+                        <i class="fa-brands fa-google"></i>
+                    </button>
+                    <button type="button" title="Connexion avec GitHub">
+                        <i class="fa-brands fa-github"></i>
+                    </button>
+                </div>
+
+                <div class="secure-login">
+                    <i class="fa-solid fa-shield-cat"></i> Connexion sécurisée
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+    <!-- SDKs Firebase version Compat -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
+    <!-- Fichier JS Connexion -->
+    <script src="login.js"></script>
+</body>
+</html>
