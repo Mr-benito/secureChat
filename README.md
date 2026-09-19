@@ -69,19 +69,6 @@ graph TB
 
 
 
-```markdown
----
-
-## 🔐 Protocoles et Mécanismes de Sécurité
-
-| # | Mécanisme | Rôle | Statut |
-|:-:|-----------|------|:------:|
-| 1 | 🔑 **RSA-OAEP 2048 bits** | Chiffrement asymétrique des messages | ✅ |
-| 2 | 🌐 **Web Crypto API** | Opérations cryptographiques côté client | ✅ |
-| 3 | 🔒 **SHA-256** | Hachage et contrôle d'intégrité | ✅ |
-| 4 | 🛡️ **HTTPS/TLS** | Chiffrement du transport | ✅ |
-| 5 | 📞 **WebRTC / DTLS-SRTP** | Appels audio/vidéo chiffrés | ✅ |
-| 6 | 👤 **Firebase Auth (JWT)** | Authentification et sessions | ✅ |
 
 ---
     style BACKEND fill:#fff3e0,stroke:#f57c00,stroke-width:2px
