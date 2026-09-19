@@ -43,7 +43,6 @@ Développer et déployer une application de messagerie web permettant à deux ut
 
 ```mermaid
 graph TB
-    
     subgraph CLIENT["🌐 NAVIGATEUR WEB (Client)"]
         A1[HTML5 + CSS3 + JavaScript ES6]
         A2[Web Crypto API - SubtleCrypto]
@@ -65,6 +64,8 @@ graph TB
     BACKEND -->|📦 SDK| DB
 
     style CLIENT fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style BACKEND fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style DB fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
 
 
 
