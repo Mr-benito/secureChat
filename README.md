@@ -4,7 +4,6 @@
 
 [![Vercel](https://img.shields.io/badge/Deployed-Vercel-black?logo=vercel)](https://secure-chat-bice.vercel.app)
 [![Firebase](https://img.shields.io/badge/Backend-Firebase-orange?logo=firebase)](https://firebase.google.com)
-[![License](https://img.shields.io/badge/License-Academic-blue)]()
 
 ---
 
@@ -14,7 +13,7 @@
 |-----|------|
 | **NDUBU LULE BENITO** | Développeur Backend & Firebase |
 | **KAMBA KATANU NOÉ** | Développeur Frontend & Cryptographie |
-| **WUMBA WUMBA ALBERT** |Frontend |
+| **WUMBA WUMBA ALBERT** | Frontend |
 
 **Groupe :** 27 - Sécurité Réseau  
 **Module :** Protocoles de Sécurité Réseau & Cryptographie  
@@ -37,66 +36,33 @@ Développer et déployer une application de messagerie web permettant à deux ut
 - ✅ Implémenter des appels audio/vidéo chiffrés (WebRTC)
 
 ---
-## 🏗️ Architecture
-┌─────────────────────────────────────────────────┐
-│ NAVIGATEUR WEB (Client) │
-│ ┌───────────────────────────────────────────┐ │
-│ │ HTML5 + CSS3 + JavaScript ES6 │ │
-│ │ Web Crypto API (SubtleCrypto) │ │
-│ │ Firebase SDK │ │
-│ └───────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────┘
-↓ HTTPS/TLS
-┌─────────────────────────────────────────────────┐
-│ BACKEND FIREBASE │
-│ ┌───────────────────────────────────────────┐ │
-│ │ Firebase Authentication (comptes) │ │
-│ │ Cloud Firestore (base de données) │ │
-│ └───────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────┘
-↓
-┌─────────────────────────────────────────────────┐
-│ BASE DE DONNÉES │
-│ • Users (uid, username, email, publicKey) │
-│ • Chats (chatId, lastMessage, timestamp) │
-│ • Messages (ciphertext, senderId, receiverId) │
-└─────────────────────────────────────────────────┘
-
----
-
-## 🔐 Protocoles et Mécanismes de Sécurité
-
-| # | Mécanisme | Rôle |
-|---|-----------|------|
-| 1 | **RSA-OAEP 2048 bits** | Chiffrement asymétrique des messages |
-| 2 | **Web Crypto API (SubtleCrypto)** | Opérations cryptographiques côté client |
-| 3 | **SHA-256** | Hachage et contrôle d'intégrité |
-| 4 | **HTTPS/TLS** | Chiffrement du transport |
-| 5 | **WebRTC / DTLS-SRTP** | Appels audio/vidéo chiffrés |
-| 6 | **Firebase Auth (JWT)** | Authentification et sessions |
-
-### Principe du Chiffrement de Bout en Bout
-
-
-**Point fondamental :** Le serveur ne possède **jamais** la clé privée. Il ne peut donc **jamais** déchiffrer les messages.
-
----
-
-## 📦 Installation Locale
-
-### Prérequis
-- **Node.js** (v18 ou supérieur) — [Télécharger](https://nodejs.org)
-- **Git** — [Télécharger](https://git-scm.com)
-- Un navigateur moderne (Chrome, Firefox, Edge)
-
-### Étapes
-
-1. **Cloner le dépôt**
-   ```bash
-   git clone https://github.com/Mr-benito/secureChat.git
-   cd secureChat
-
-   npm install
-   
 
 ## 🏗️ Architecture
+
+### Vue d'ensemble (3 tiers)
+
+```mermaid
+graph TB
+    subgraph CLIENT["🌐 NAVIGATEUR WEB (Client)"]
+        A1[HTML5 + CSS3 + JavaScript ES6]
+        A2[Web Crypto API - SubtleCrypto]
+        A3[Firebase SDK]
+    end
+    
+    subgraph BACKEND["☁️ BACKEND FIREBASE"]
+        B1[Firebase Authentication]
+        B2[Cloud Firestore]
+    end
+    
+    subgraph DB["💾 BASE DE DONNÉES"]
+        C1[📁 users]
+        C2[📁 chats]
+        C3[📁 messages]
+    end
+    
+    CLIENT -->|🔒 HTTPS/TLS| BACKEND
+    BACKEND -->|📦 SDK| DB
+    
+    style CLIENT fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style BACKEND fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style DB fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
