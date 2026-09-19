@@ -14,6 +14,7 @@
 |-----|------|
 | **NDUBU LULE BENITO** | Développeur Backend & Firebase |
 | **KAMBA KATANU NOÉ** | Développeur Frontend & Cryptographie |
+| **WUMBA WUMBA ALBERT** |Frontend |
 
 **Groupe :** 27 - Sécurité Réseau  
 **Module :** Protocoles de Sécurité Réseau & Cryptographie  
