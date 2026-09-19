@@ -1,139 +1,91 @@
-SecureChat - Groupe 27
-Application de messagerie web chiffrée de bout en bout (E2EE).
+# 🔐 SecureChat - Groupe 27
 
-Membres du groupe
-Nom	Rôle
-NDUBU LULE BENITO	Développeur Backend et Firebase
-KAMBA KATANU NOÉ	Développeur Frontend et Cryptographie
-WUMBA WUMBA ALBERT	Frontend
-Groupe : 27 - Sécurité Réseau
-Module : Protocoles de Sécurité Réseau et Cryptographie
-Année académique : 2025 - 2026
-Université de Kinshasa - Faculté des Sciences et Technologies
+> Application de messagerie web chiffrée de bout en bout (E2EE) avec appels audio/vidéo sécurisés.
 
-Objectifs
-Objectif général : Développer et déployer une application de messagerie web permettant à deux utilisateurs de communiquer de manière confidentielle, sans que le serveur puisse lire les messages.
+---
 
-Objectifs spécifiques :
+## 👥 Membres du Groupe
 
-Concevoir une architecture sécurisée à 3 tiers
+| Nom | Rôle |
+|-----|------|
+| **NDUBU LULE BENITO** | Développeur Backend & Firebase |
+| **KAMBA KATANU NOÉ** | Développeur Frontend & Cryptographie |
+| **WUMBA WUMBA ALBERT** | Frontend |
 
-Implémenter l'authentification via Firebase Auth
+- **Groupe :** 27 - Sécurité Réseau
+- **Module :** Protocoles de Sécurité Réseau & Cryptographie
+- **Année académique :** 2025 - 2026
+- **Université :** Université de Kinshasa - Faculté des Sciences et Technologies
 
-Générer les clés cryptographiques localement avec la Web Crypto API
+---
 
-Chiffrer les messages avec RSA-OAEP 2048 bits
+## 🎯 Objectifs
 
-Déployer l'application en HTTPS sur Vercel
+### Objectif Général
+Développer et déployer une application de messagerie web permettant à deux utilisateurs de communiquer de manière confidentielle, **sans que le serveur puisse lire les messages**.
 
-Implémenter des appels audio et vidéo chiffrés avec WebRTC
+### Objectifs Spécifiques
+- Concevoir une architecture sécurisée à 3 tiers
+- Implémenter l'authentification via Firebase Auth
+- Générer les clés cryptographiques localement (Web Crypto API)
+- Chiffrer les messages avec RSA-OAEP 2048 bits
+- Déployer l'application en HTTPS sur Vercel
+- Implémenter des appels audio/vidéo chiffrés (WebRTC)
 
-Architecture
+---
+
+## 🏗️ Architecture
+
 Le projet repose sur une architecture à trois tiers.
 
-Tier 1 : Navigateur web (client)
+### Tier 1 : Navigateur Web (Client)
+- HTML5, CSS3, JavaScript ES6
+- Web Crypto API pour les opérations cryptographiques
+- Firebase SDK pour la communication avec le backend
 
-HTML5, CSS3, JavaScript ES6
+### Tier 2 : Backend Firebase
+- Firebase Authentication pour la gestion des comptes
+- Cloud Firestore pour la base de données temps réel
 
-Web Crypto API pour les opérations cryptographiques
+### Tier 3 : Base de Données
+- `users` : uid, username, email, publicKey
+- `chats` : chatId, lastMessage, timestamp
+- `messages` : ciphertext, senderId, receiverId, timestamp
 
-Firebase SDK pour la communication avec le backend
+### Flux d'un message
 
-Tier 2 : Backend Firebase
+1. L'expéditeur saisit un message
+2. Le message est chiffré localement avec la clé publique du destinataire
+3. Le message chiffré est envoyé à Firestore
+4. Firestore stocke le message sans pouvoir le lire
+5. Le destinataire reçoit le message chiffré
+6. Le destinataire le déchiffre avec sa clé privée
 
-Firebase Authentication pour la gestion des comptes
+---
 
-Cloud Firestore pour la base de données en temps réel
+## 🔐 Protocoles et Mécanismes de Sécurité
 
-Tier 3 : Base de données
+| Mécanisme | Rôle |
+|-----------|------|
+| **RSA-OAEP 2048 bits** | Chiffrement asymétrique des messages |
+| **Web Crypto API** | Opérations cryptographiques côté client |
+| **SHA-256** | Hachage et contrôle d'intégrité |
+| **HTTPS/TLS** | Chiffrement du transport |
+| **WebRTC / DTLS-SRTP** | Appels audio et vidéo chiffrés |
+| **Firebase Auth (JWT)** | Authentification et gestion des sessions |
 
-Collection users : uid, username, email, publicKey
+---
 
-Collection chats : chatId, lastMessage, timestamp
+## 📦 Installation Locale
 
-Collection messages : ciphertext, senderId, receiverId, timestamp
+### Prérequis
+- Node.js version 18 ou supérieure
+- Git
+- Un navigateur moderne (Chrome, Firefox, Edge)
 
-Flux d'un message :
+### Étapes
 
-L'expéditeur saisit un message
-
-Le message est chiffré localement avec la clé publique du destinataire
-
-Le message chiffré est envoyé à Firestore
-
-Firestore stocke le message sans pouvoir le lire
-
-Le destinataire reçoit le message chiffré
-
-Le destinataire le déchiffre avec sa clé privée
-
-Protocoles et mécanismes de sécurité
-Mécanisme	Rôle
-RSA-OAEP 2048 bits	Chiffrement asymétrique des messages
-Web Crypto API	Opérations cryptographiques côté client
-SHA-256	Hachage et contrôle d'intégrité
-HTTPS/TLS	Chiffrement du transport
-WebRTC / DTLS-SRTP	Appels audio et vidéo chiffrés
-Firebase Auth (JWT)	Authentification et gestion des sessions
-Installation locale
-Prérequis :
-
-Node.js version 18 ou supérieure
-
-Git
-
-Un navigateur moderne
-
-Étapes :
-
-Cloner le dépôt
-git clone https://github.com/Mr-benito/secureChat.git
-cd secureChat
-
-Lancer l'application
-npx serve .
-
-Accéder à l'application
-Ouvrir http://localhost:3000 dans le navigateur
-
-Alternative : ouvrir directement le fichier login.html dans le navigateur.
-
-Déploiement
-Service	URL	Statut
-Frontend Vercel	https://secure-chat-bice.vercel.app	HTTPS actif
-Backend Firebase	Firebase Auth et Firestore	Actif
-Dépôt GitHub	https://github.com/Mr-benito/secureChat	Public
-Tests
-Test	Cible	Résultat attendu	Statut
-Authentification	Firebase Auth	Token JWT valide	Réussi
-Chiffrement client	Web Crypto API	Ciphertext illisible sans clé	Réussi
-Inspection serveur	Firestore	Contenu inintelligible	Réussi
-Appel vidéo	PeerJS WebRTC	Flux DTLS-SRTP	Réussi
-Injection XSS	Champs de saisie	Sanitisation correcte	Réussi
-Navigation privée	URL publique	Site accessible	Réussi
-Limites identifiées :
-
-Dépendance à la sécurité du terminal client
-
-Métadonnées visibles côté serveur
-
-Absence de Forward Secrecy parfaite
-
-Clé privée stockée dans le localStorage
-
-Identifiants de démonstration
-Email	Mot de passe
-demo1@securechat.com	Demo1234!
-demo2@securechat.com	Demo1234!
-Technologies utilisées
-Catégorie	Technologie
-Frontend	HTML5, CSS3, JavaScript ES6
-Cryptographie	Web Crypto API (RSA-OAEP, SHA-256)
-Backend	Firebase Authentication et Firestore
-Appels	PeerJS (WebRTC)
-Icônes	Font Awesome 6.5.1
-Hébergement	Vercel
-Licence
-Projet académique réalisé dans le cadre du module Protocoles de Sécurité Réseau et Cryptographie à l'Université de Kinshasa.
-
-© 2026 - Groupe 27
+1. Cloner le dépôt
+   ```bash
+   git clone https://github.com/Mr-benito/secureChat.git
+   cd secureChat
