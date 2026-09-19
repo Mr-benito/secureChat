@@ -66,11 +66,3 @@ graph TB
     style CLIENT fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     style BACKEND fill:#fff3e0,stroke:#f57c00,stroke-width:2px
     style DB fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
-
-
-
-
-
----
-    style BACKEND fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    style DB fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
