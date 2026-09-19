@@ -37,7 +37,30 @@ Développer et déployer une application de messagerie web permettant à deux ut
 - ✅ Implémenter des appels audio/vidéo chiffrés (WebRTC)
 
 ---
-
+## 🏗️ Architecture
+┌─────────────────────────────────────────────────┐
+│ NAVIGATEUR WEB (Client) │
+│ ┌───────────────────────────────────────────┐ │
+│ │ HTML5 + CSS3 + JavaScript ES6 │ │
+│ │ Web Crypto API (SubtleCrypto) │ │
+│ │ Firebase SDK │ │
+│ └───────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+↓ HTTPS/TLS
+┌─────────────────────────────────────────────────┐
+│ BACKEND FIREBASE │
+│ ┌───────────────────────────────────────────┐ │
+│ │ Firebase Authentication (comptes) │ │
+│ │ Cloud Firestore (base de données) │ │
+│ └───────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+↓
+┌─────────────────────────────────────────────────┐
+│ BASE DE DONNÉES │
+│ • Users (uid, username, email, publicKey) │
+│ • Chats (chatId, lastMessage, timestamp) │
+│ • Messages (ciphertext, senderId, receiverId) │
+└─────────────────────────────────────────────────┘
 
 ---
 
