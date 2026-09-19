@@ -43,6 +43,23 @@ Développer et déployer une application de messagerie web permettant à deux ut
 
 ```mermaid
 graph TB
+    ### Principe du Chiffrement de Bout en Bout
+
+```mermaid
+sequenceDiagram
+    participant Alice
+    participant Serveur as Serveur Firebase
+    participant Bob
+
+    Alice->>Alice: 1. Saisit le message clair
+    Alice->>Alice: 2. Chiffre avec la clé publique de Bob
+    Alice->>Serveur: 3. Envoie le message chiffré
+    Note over Serveur: ❌ Ne peut pas lire<br/>(pas de clé privée)
+    Serveur->>Bob: 4. Transmet le message chiffré
+    Bob->>Bob: 5. Déchiffre avec sa clé privée
+    Bob->>Bob: 6. Affiche le message clair
+
+    Note over Alice,Bob: 🔒 Le serveur ne voit jamais le message en clair
     subgraph CLIENT["🌐 NAVIGATEUR WEB (Client)"]
         A1[HTML5 + CSS3 + JavaScript ES6]
         A2[Web Crypto API - SubtleCrypto]
