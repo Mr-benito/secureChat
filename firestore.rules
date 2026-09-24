@@ -1,0 +1,122 @@
+rules_version = '2';
+
+// À tester dans l'émulateur Firestore (ou l'onglet « Règles > Simulateur » de la console)
+// avant de remplacer vos règles actuelles.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // L'identifiant d'un chat est « uidA_uidB » (uids triés) : seuls ces deux comptes y ont accès
+    function inChat(chatId) {
+      return signedIn() && request.auth.uid in chatId.split('_');
+    }
+
+    // Profils : lisibles par les comptes connectés, modifiables par leur propriétaire
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Présence (en ligne / dernière connexion)
+    match /presence/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Blocages : id = <bloqueur>_<bloqué>
+    match /blocks/{blockId} {
+      allow read: if signedIn()
+        && (resource.data.blockerId == request.auth.uid || resource.data.blockedId == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.blockerId == request.auth.uid
+        && blockId == request.auth.uid + '_' + request.resource.data.blockedId;
+      allow delete: if signedIn() && resource.data.blockerId == request.auth.uid;
+    }
+
+    match /chats/{chatId} {
+      allow read, write: if inChat(chatId);
+
+      match /messages/{msgId} {
+        allow read: if inChat(chatId);
+
+        // Envoi : uniquement en votre nom, vers l'autre participant.
+        // Si le destinataire vous a bloqué, le message doit porter suppressed == true.
+        allow create: if inChat(chatId)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.receiverId in chatId.split('_')
+          && request.resource.data.receiverId != request.auth.uid
+          && (
+            !exists(/databases/$(database)/documents/blocks/$(request.resource.data.receiverId + '_' + request.auth.uid))
+            || request.resource.data.get('suppressed', false) == true
+          );
+
+        allow update: if inChat(chatId) && (
+          // L'expéditeur peut modifier le contenu ou le masquer pour lui
+          (resource.data.senderId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['text', 'textForSender', 'edited', 'editedAt', 'deletedFor']))
+          ||
+          // Le destinataire peut seulement changer le statut (reçu / vu) ou masquer pour lui
+          (resource.data.receiverId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'deliveredAt', 'readAt', 'deletedFor']))
+        );
+
+        // Suppression pour tout le monde : réservée à l'expéditeur
+        allow delete: if inChat(chatId) && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // Groupes : id auto-généré ; seuls les membres peuvent lire/écrire
+    match /groups/{groupId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+
+      allow create: if signedIn()
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow update: if signedIn() && request.auth.uid in resource.data.members && (
+        // Modifier son propre compteur de non-lus, ou quitter le groupe soi-même
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unreadCount_' + request.auth.uid]))
+        ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          && request.resource.data.members.size() == resource.data.members.size() - 1
+          && !(request.auth.uid in request.resource.data.members))
+        ||
+        // Le créateur peut renommer le groupe ou en gérer les membres
+        (resource.data.createdBy == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members']))
+      );
+
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+
+      match /messages/{msgId} {
+        allow read: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+
+        allow create: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members
+          && request.resource.data.senderId == request.auth.uid;
+
+        allow update: if signedIn() && (
+          (resource.data.senderId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'edited', 'editedAt', 'deletedFor']))
+          ||
+          (request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedFor']))
+        );
+
+        allow delete: if signedIn() && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // Appels
+    match /calls/{callId} {
+      allow create: if signedIn() && request.resource.data.callerId == request.auth.uid;
+      allow read, update: if signedIn()
+        && (resource.data.receiverId == request.auth.uid || resource.data.callerId == request.auth.uid);
+    }
+  }
+}

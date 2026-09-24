@@ -70,9 +70,10 @@ function setLoadingState(isLoading) {
     }
 }
 
+// Remplace le bloc d'inscription (signupForm.addEventListener) par :
 if (signupForm) {
     signupForm.addEventListener("submit", async (e) => {
-        e.preventDefault(); // Empêche l'actualisation de la page
+        e.preventDefault();
         clearError();
 
         const username = usernameInput.value.trim();
@@ -103,38 +104,53 @@ if (signupForm) {
         setLoadingState(true);
 
         try {
-            // 1. Création compte utilisateur
+            // 1. Création compte utilisateur dans Firebase Auth
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
             const user = userCredential.user;
 
-            // 2. Sauvegarde Firestore
+            // Update du profil Firebase Auth avec le displayName
+            await user.updateProfile({ displayName: username });
+
+            // 2. Génération des clés E2EE
+            let publicKeyStr = "";
+            let encryptedPrivateKey = "";
+            let rawPrivateKey = "";
+
+            if (typeof E2EE !== "undefined" && E2EE.generateKeyPair) {
+                const keys = await E2EE.generateKeyPair();
+                rawPrivateKey = typeof keys.privateKeyString === "string" ? keys.privateKeyString : JSON.stringify(keys.privateKeyString);
+                publicKeyStr = typeof keys.publicKeyString === "string" ? keys.publicKeyString : JSON.stringify(keys.publicKeyString);
+
+                // Chiffrement de la clé privée avec le mot de passe de l'utilisateur
+                if (E2EE.exportEncryptedPrivateKey) {
+                    encryptedPrivateKey = await E2EE.exportEncryptedPrivateKey(rawPrivateKey, password);
+                } else {
+                    encryptedPrivateKey = rawPrivateKey;
+                }
+            }
+
+            // 3. Sauvegarde dans Firestore
             await db.collection("users").doc(user.uid).set({
                 uid: user.uid,
                 username: username,
                 email: email,
+                publicKey: publicKeyStr,
+                encryptedPrivateKey: encryptedPrivateKey,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
 
-            // Redirection
+            // 4. Sauvegarde de la clé privée locale pour cet appareil
+            if (rawPrivateKey) {
+                localStorage.setItem(`e2ee_private_${user.uid}`, rawPrivateKey);
+            }
+
+            // Redirection vers l'application
             window.location.href = "index.html";
 
         } catch (error) {
             setLoadingState(false);
             console.error("Erreur Inscription :", error);
-
-            switch (error.code) {
-                case "auth/email-already-in-use":
-                    showError("Cette adresse e-mail est déjà utilisée.");
-                    break;
-                case "auth/invalid-email":
-                    showError("Format d'adresse e-mail invalide.");
-                    break;
-                case "auth/weak-password":
-                    showError("Le mot de passe doit contenir au moins 6 caractères.");
-                    break;
-                default:
-                    showError("Erreur : " + error.message);
-            }
+            showError("Erreur : " + error.message);
         }
     });
 }

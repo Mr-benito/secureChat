@@ -13,6 +13,24 @@ if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 const auth = firebase.auth();
+// Firestore n'est pas forcément chargé sur la page de connexion : on protège l'accès
+const db = typeof firebase.firestore === "function" ? firebase.firestore() : null;
+
+// Messages d'erreur lisibles
+function friendlyAuthError(error) {
+    switch (error && error.code) {
+        case "auth/invalid-email": return "Adresse e-mail invalide.";
+        case "auth/user-not-found":
+        case "auth/wrong-password":
+        case "auth/invalid-credential":
+        case "auth/invalid-login-credentials": return "E-mail ou mot de passe incorrect.";
+        case "auth/user-disabled": return "Ce compte a été désactivé.";
+        case "auth/too-many-requests": return "Trop de tentatives. Patientez quelques minutes ou réinitialisez votre mot de passe.";
+        case "auth/network-request-failed": return "Problème de connexion réseau. Réessayez.";
+        case "auth/unauthorized-domain": return "Ce domaine n'est pas autorisé dans Firebase (Authentication > Paramètres > Domaines autorisés).";
+        default: return "Erreur : " + ((error && error.message) || "connexion impossible.");
+    }
+}
 
 const loginForm = document.querySelector("form");
 const emailInput = document.getElementById("email");
@@ -37,11 +55,16 @@ if (!errorBox && loginForm) {
     loginForm.parentNode.insertBefore(errorBox, loginForm);
 }
 
-function showError(message) {
-    if (errorBox) {
-        errorBox.textContent = message;
-        errorBox.style.display = "block";
+function showError(message, opts = {}) {
+    if (!errorBox) return;
+    errorBox.textContent = message;
+    if (opts.code) {
+        const small = document.createElement("small");
+        small.style.cssText = "display:block;margin-top:4px;opacity:.7;";
+        small.textContent = opts.code;
+        errorBox.appendChild(small);
     }
+    errorBox.style.display = "block";
 }
 
 function clearError() {
@@ -66,9 +89,10 @@ function setLoadingState(isLoading) {
     }
 }
 
+// Remplace le bloc de connexion (loginForm.addEventListener) par :
 if (loginForm) {
     loginForm.addEventListener("submit", async (e) => {
-        e.preventDefault(); // Empêche l'actualisation de la page
+        e.preventDefault();
         clearError();
 
         const email = emailInput.value.trim();
@@ -82,27 +106,39 @@ if (loginForm) {
         setLoadingState(true);
 
         try {
-            await auth.signInWithEmailAndPassword(email, password);
+            // 1. Authentification Firebase
+            const userCredential = await auth.signInWithEmailAndPassword(email, password);
+            const user = userCredential.user;
+
+            // 2. Restauration de la clé E2EE si absente de cet appareil (n'empêche jamais la connexion)
+            try {
+                const existingLocalKey = localStorage.getItem(`e2ee_private_${user.uid}`);
+
+                if (!existingLocalKey && db && typeof E2EE !== "undefined" && E2EE.importEncryptedPrivateKey) {
+                    const userDoc = await db.collection("users").doc(user.uid).get();
+                    if (userDoc.exists && userDoc.data().encryptedPrivateKey) {
+                        // Déchiffrement avec le mot de passe saisi
+                        const restoredPrivateKey = await E2EE.importEncryptedPrivateKey(
+                            userDoc.data().encryptedPrivateKey,
+                            password
+                        );
+                        if (restoredPrivateKey) {
+                            localStorage.setItem(`e2ee_private_${user.uid}`, restoredPrivateKey);
+                            console.log("Clé E2EE déchiffrée et restaurée sur cet appareil.");
+                        }
+                    }
+                }
+            } catch (keyErr) {
+                console.warn("Impossible de restaurer la clé E2EE (compte ancien, clé obsolète ou accès refusé).", keyErr);
+            }
+
+            // Redirection vers l'application
             window.location.href = "index.html";
+
         } catch (error) {
             setLoadingState(false);
             console.error("Erreur Connexion :", error);
-
-            switch (error.code) {
-                case "auth/invalid-email":
-                    showError("L'adresse e-mail n'est pas valide.");
-                    break;
-                case "auth/user-not-found":
-                case "auth/wrong-password":
-                case "auth/invalid-credential":
-                    showError("Compte inexistant ou mot de passe incorrect.");
-                    break;
-                case "auth/too-many-requests":
-                    showError("Trop de tentatives. Veuillez patienter.");
-                    break;
-                default:
-                    showError("Erreur : " + error.message);
-            }
+            showError(friendlyAuthError(error), { code: error && error.code });
         }
     });
 }

@@ -864,3 +864,35 @@ body {
         padding: 12px !important;
     }
 }
+#appLayout, #authContainer {
+    display: none;
+}
+/* 🔴 Badge de notification pour les messages non lus */
+.unread-badge {
+    background-color: #ef4444;
+    color: #ffffff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    margin-left: auto;
+    display: inline-block;
+}
+
+/* 💬 Style du contact ayant des messages non lus */
+.contact-item.has-unread .contact-name {
+    font-weight: 800 !important;
+    color: #0f172a !important;
+}
+
+.contact-item.has-unread .last-message-preview {
+    font-weight: 700 !important;
+    color: #1e293b !important;
+}
+
+/* 🕒 Subtitre pour la dernière connexion dans l'en-tête du chat */
+.user-status-text {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-top: 2px;
+}
