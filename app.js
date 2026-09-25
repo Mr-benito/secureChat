@@ -1015,14 +1015,12 @@ auth.onAuthStateChanged((user) => {
         currentUser = user;
 
         const showApp = () => {
-            const authContainer = document.getElementById("authContainer");
-            const appLayout = document.getElementById("appLayout");
+            // 💡 1. Initialisation immédiate des clés RSA/AES propres au nouvel utilisateur
+            if (typeof initUserKeys === "function") {
+                initUserKeys(user); 
+            }
 
-            if (authContainer) authContainer.style.display = "none";
-            if (appLayout) appLayout.style.display = "flex";
-
-            // 💡 FIX 1 : Ne JAMAIS exécuter cleanupSession() ici quand l'utilisateur vient de se connecter !
-            
+            // 💡 2. Chargement des données de l'application
             setupTabNavigation();
             setupSearch();
             loadUserProfile(user);
@@ -1032,9 +1030,8 @@ auth.onAuthStateChanged((user) => {
             loadContacts();
             listenGroups(user.uid);
             mountGroupFab();
-            
+
             if (typeof initPeerJS === "function") initPeerJS(user.uid);
-            if (typeof initUserKeys === "function") initUserKeys(user);
             if (typeof startPresence === "function") startPresence(user.uid);
             if (typeof requestNotificationPermissionOnce === "function") requestNotificationPermissionOnce();
         };
@@ -1045,15 +1042,15 @@ auth.onAuthStateChanged((user) => {
             showApp();
         }
     } else {
-        // 💡 FIX 2 : La réinitialisation de session se fait EXCLUSIVEMENT à la déconnexion
+        // 💡 3. Déconnexion : On nettoie tout le cache de chiffrement local pour éviter d'infecter la session suivante
         if (typeof cleanupSession === "function") cleanupSession();
         
         currentUser = null;
-        const authContainer = document.getElementById("authContainer");
-        const appLayout = document.getElementById("appLayout");
 
-        if (appLayout) appLayout.style.display = "none";
-        if (authContainer) authContainer.style.display = "block";
+        // 💡 4. Vrai renvoi vers la page de connexion au lieu de chercher un HTML inexistant
+        if (!window.location.pathname.endsWith("login.html")) {
+            window.location.href = "login.html";
+        }
     }
 });
 // ============================================================================
