@@ -130,6 +130,11 @@
     <!-- SDKs Firebase version Compat -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <!-- Manquait : nécessaire pour restaurer la clé privée (login.js lit users/{uid} via Firestore) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <!-- Module de chiffrement E2EE : DOIT être chargé avant login.js, qui restaure la clé privée -->
+    <script src="crypto-helper.js"></script>
 
     <!-- Fichier JS Connexion -->
     <script src="login.js"></script>

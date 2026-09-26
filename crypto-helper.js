@@ -141,3 +141,89 @@ E2EE.importEncryptedPrivateKey = async function(encryptedDataJson, secretPasswor
 
     return dec.decode(decrypted);
 };
+
+// ==========================================
+// CHIFFREMENT HYBRIDE GÉNÉRIQUE (AES-GCM 256 + RSA-OAEP) — pour les discussions à deux.
+// Contrairement au chiffrement direct RSA-OAEP ci-dessus (limité à ~190 octets en clair !),
+// ceci chiffre le texte une fois avec une clé AES aléatoire, puis ne chiffre QUE cette petite
+// clé pour chaque destinataire (ici : vous et votre interlocuteur). Aucune limite de taille.
+// ==========================================
+
+// recipientsPublicKeys : { uid: "clépubliqueBase64", ... } — ici toujours { moi, l'autre }
+E2EE.encryptHybrid = async function (text, recipientsPublicKeys) {
+    const aesKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipherBuffer = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, new TextEncoder().encode(text));
+    const rawAesKey = await crypto.subtle.exportKey("raw", aesKey);
+
+    const keys = {};
+    await Promise.all(Object.entries(recipientsPublicKeys || {}).map(async ([uid, pubKeyStr]) => {
+        if (!pubKeyStr) return;
+        try {
+            const pubKey = await this.importPublicKey(pubKeyStr);
+            const wrapped = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, rawAesKey);
+            keys[uid] = toB64(wrapped);
+        } catch (e) {
+            console.warn(`Impossible de chiffrer la clé pour ${uid} :`, e);
+        }
+    }));
+
+    return { iv: toB64(iv), cipherText: toB64(cipherBuffer), keys };
+};
+
+E2EE.decryptHybrid = async function (payload, myUid, myPrivateKeyString) {
+    const wrappedKey = payload && payload.keys && payload.keys[myUid];
+    if (!wrappedKey) throw new Error("Aucune clé disponible pour ce message.");
+
+    const privateKey = await this.importPrivateKey(myPrivateKeyString);
+    const rawAesKey = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, fromB64(wrappedKey).buffer);
+    const aesKey = await crypto.subtle.importKey("raw", rawAesKey, { name: "AES-GCM" }, false, ["decrypt"]);
+    const plainBuffer = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(payload.iv) }, aesKey, fromB64(payload.cipherText).buffer);
+    return new TextDecoder().decode(plainBuffer);
+};
+
+// ==========================================
+// CHIFFREMENT DE GROUPE : une clé AES-256 unique par groupe (comme WhatsApp/Signal),
+// distribuée une seule fois par membre (chiffrée avec sa clé publique RSA), puis réutilisée
+// pour tous les messages du groupe. Beaucoup plus léger que rechiffrer le texte pour chacun
+// à chaque message, et compatible avec une fenêtre d'historique gérée côté règles Firestore.
+// ==========================================
+
+function toB64(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function fromB64(str) { return Uint8Array.from(atob(str), c => c.charCodeAt(0)); }
+
+// Génère la clé de groupe et l'exporte en base64 (à conserver seulement en mémoire côté client).
+E2EE.generateGroupKey = async function () {
+    const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    const raw = await crypto.subtle.exportKey("raw", key);
+    return toB64(raw);
+};
+
+// Chiffre la clé de groupe (base64) pour UN membre avec sa clé publique RSA.
+E2EE.wrapGroupKeyForMember = async function (rawGroupKeyBase64, memberPublicKeyString) {
+    const pubKey = await this.importPublicKey(memberPublicKeyString);
+    const wrapped = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, fromB64(rawGroupKeyBase64).buffer);
+    return toB64(wrapped);
+};
+
+// Récupère la clé de groupe en clair à partir de MA copie chiffrée + ma clé privée.
+E2EE.unwrapGroupKey = async function (myWrappedKeyBase64, myPrivateKeyString) {
+    const privateKey = await this.importPrivateKey(myPrivateKeyString);
+    const raw = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, fromB64(myWrappedKeyBase64).buffer);
+    return toB64(raw);
+};
+
+// Chiffre/déchiffre le texte d'un message avec la clé de groupe déjà en clair (rapide, symétrique).
+E2EE.encryptGroupText = async function (text, rawGroupKeyBase64) {
+    const key = await crypto.subtle.importKey("raw", fromB64(rawGroupKeyBase64), { name: "AES-GCM" }, false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipherBuffer = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text));
+    return { iv: toB64(iv), cipherText: toB64(cipherBuffer) };
+};
+
+E2EE.decryptGroupText = async function (payload, rawGroupKeyBase64) {
+    const key = await crypto.subtle.importKey("raw", fromB64(rawGroupKeyBase64), { name: "AES-GCM" }, false, ["decrypt"]);
+    const plainBuffer = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(payload.iv) }, key, fromB64(payload.cipherText).buffer);
+    return new TextDecoder().decode(plainBuffer);
+};
+

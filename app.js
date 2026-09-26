@@ -1,7 +1,10 @@
 /* =============================================================================
    app-2.js — Messagerie (Firebase Auth + Firestore + E2EE + PeerJS)
    =============================================================================
-   Nouveautés
+   Corrections & nouveautés
+   - Liste des contacts / conversations : chargement corrigé (loadContacts manquant, variable « first » absente)
+   - Groupes : icône dédiée (au lieu des initiales), contacts : initiales colorées
+   - Interface : vraies icônes Font Awesome, style de messagerie moderne
    - Dernière connexion détaillée dans l'en-tête (en ligne / il y a X min / hier à HH:MM / date)
    - Nouveaux messages : conversation en gras + badge, séparateur « N nouveaux messages »
    - Statuts : envoi en cours, envoyé (✓), reçu (✓✓ gris), vu (✓✓ bleu)
@@ -238,27 +241,143 @@ html[data-theme="dark"] .x-group-members { border-color: #334155; }
 .x-scan-hint { margin-top: 16px; padding: 0 16px; font-size: 14px; color: #fff; text-align: center; }
 .x-scan-close { margin-top: 16px; }
 
-/* ---------- Avatars : couleur par personne, icône pour les groupes ---------- */
-.avatar.x-avatar-user, .avatar.x-avatar-group { display: flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 50%; color: #fff; font-weight: 600; letter-spacing: .02em; user-select: none; }
-.avatar.x-avatar-group { background: linear-gradient(135deg, #6366f1, #2563eb) !important; }
-.avatar.x-avatar-group i { font-size: 1em; line-height: 1; }
+/* =====================================================================
+   Refonte visuelle (style messageries modernes)
+   ===================================================================== */
+body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
 
-/* ---------- Cartes de l'onglet Contacts ---------- */
-.x-contact { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; margin-bottom: 8px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; transition: box-shadow .15s ease, border-color .15s ease; }
-.x-contact:hover { border-color: #cbd5e1; box-shadow: 0 4px 14px rgba(15,23,42,.08); }
+/* ---------- Avatars : initiales colorées (contact) / icône (groupe) ---------- */
+body .avatar.x-av { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 48px; height: 48px; min-width: 48px; flex-shrink: 0; border-radius: 50%; overflow: hidden; background: #2563eb; color: #fff; font-size: 16px; font-weight: 600; letter-spacing: .3px; line-height: 1; user-select: none; }
+body .avatar.x-av.x-av-group { background: linear-gradient(135deg, #6366f1 0%, #2563eb 100%) !important; }
+body .avatar.x-av i { font-size: 1.1em; line-height: 1; }
+body .conversation .avatar.x-av { width: 50px; height: 50px; min-width: 50px; }
+body .chat-user .avatar.x-av { width: 42px; height: 42px; min-width: 42px; font-size: 15px; }
+body .x-member-row .avatar.x-av { width: 34px; height: 34px; min-width: 34px; font-size: 12px; }
+body .avatar.x-av.x-av-xl { width: 76px; height: 76px; min-width: 76px; font-size: 30px; }
+.x-group-hero { display: flex; justify-content: center; margin: 4px 0 14px; }
+
+/* ---------- Liste des conversations ---------- */
+body .conversation { display: flex; align-items: center; gap: 12px; margin: 2px 8px; padding: 10px 12px; border: 0; border-radius: 12px; cursor: pointer; transition: background-color .15s ease; }
+body .conversation:hover { background-color: #f1f5f9; }
+body .conversation.active-conversation { background-color: #e8f0fe; }
+body .conversation-info { flex: 1; min-width: 0; }
+body .conversation-info h3 { margin: 0 0 2px; font-size: 15px; font-weight: 600; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body .conversation-info p { margin: 0; font-size: 13.5px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body .conversation-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+body .last-msg-time { font-size: 12px; color: #94a3b8; }
+body .conversation.x-unread .last-msg-time { color: var(--x-accent); font-weight: 600; }
+body .conversation .unread { box-sizing: border-box; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--x-accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
+.x-empty-users { padding: 28px 16px; margin: 0; text-align: center; font-size: 13.5px; color: #94a3b8; }
+
+/* ---------- Onglet Contacts ---------- */
+.x-contact-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; padding: 12px 14px; background: #fff; border: 1px solid #e5e9f0; border-radius: 14px; transition: box-shadow .15s ease; }
+.x-contact-card:hover { box-shadow: 0 4px 14px rgba(15,23,42,.07); }
 .x-contact-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.x-contact-text { min-width: 0; }
-.x-contact-name { margin: 0; font-size: 14px; font-weight: 600; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.x-contact-mail { display: block; font-size: 12px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.x-contact-btn { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 8px 14px; border: none; border-radius: 999px; background: var(--x-accent); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: filter .15s ease; }
+.x-contact-text { display: flex; flex-direction: column; min-width: 0; }
+.x-contact-name { margin: 0; font-size: 15px; font-weight: 600; color: #0f172a; }
+.x-contact-sub { font-size: 12.5px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.x-contact-btn { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 8px 14px; border: 0; border-radius: 999px; background: var(--x-accent); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: filter .15s ease; }
 .x-contact-btn:hover { filter: brightness(1.1); }
-html[data-theme="dark"] .x-contact-name { color: #f1f5f9 !important; }
-html[data-theme="dark"] .x-contact-mail { color: #94a3b8 !important; }
 
-/* ---------- Sélecteur d'émojis ---------- */
-.sticker-header span { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
-.sticker-header button { display: inline-flex; align-items: center; justify-content: center; }
+/* ---------- En-tête de discussion ---------- */
+body .chat-header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #e5e9f0; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+body .chat-user { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+body .chat-user h2 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.25; color: #0f172a; }
+body .user-status-text { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12.5px; color: #64748b; }
+body .chat-actions { display: flex; align-items: center; gap: 2px; }
+body .chat-actions button, body .btn-back-mobile { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: #475569; font-size: 16px; cursor: pointer; transition: background-color .15s ease; }
+body .chat-actions button:hover, body .btn-back-mobile:hover { background: #f1f5f9; }
+
+/* ---------- Messages ---------- */
+body .chat-area .messages { padding: 16px 20px; background: #eef1f6; }
+body .message { max-width: min(78%, 560px); padding: 8px 12px 6px; border-radius: 18px; font-size: 14.5px; line-height: 1.4; box-shadow: 0 1px 1px rgba(15,23,42,.08); }
+body .message p { margin: 0; }
+body .message.sent { background: var(--x-accent); color: #fff; border-bottom-right-radius: 6px; }
+body .message.received { background: #fff; color: #0f172a; border-bottom-left-radius: 6px; }
+body .message time { display: block; margin-top: 2px; text-align: right; font-size: 11px; opacity: .75; }
+body .encryption-notice { display: flex; align-items: center; gap: 12px; max-width: 420px; margin: 12px auto; padding: 10px 14px; border-radius: 12px; background: #fff7d6; color: #6b5a1a; font-size: 12.5px; line-height: 1.4; }
+body .encryption-notice strong { display: block; font-size: 13px; }
+body .encryption-notice p { margin: 0; }
+body .encryption-notice > i { font-size: 18px; }
+
+/* ---------- Zone de saisie ---------- */
+body .message-form { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #fff; border-top: 1px solid #e5e9f0; }
+body .message-form input[type="text"] { flex: 1; min-width: 0; height: 44px; padding: 0 18px; border: 1px solid #e2e8f0; border-radius: 22px; background: #f4f6fa; font-size: 15px; outline: none; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+body .message-form input[type="text"]:focus { background: #fff; border-color: var(--x-accent); box-shadow: 0 0 0 3px rgba(37,99,235,.14); }
+body .message-form .attachment-button, body .message-form .emoji-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; border: 0; border-radius: 50%; background: transparent; color: #64748b; font-size: 18px; cursor: pointer; transition: background-color .15s ease; }
+body .message-form .attachment-button:hover, body .message-form .emoji-button:hover { background: #f1f5f9; }
+body .message-form .send-button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 50%; background: var(--x-accent); color: #fff; font-size: 16px; cursor: pointer; transition: filter .15s ease; }
+body .message-form .send-button:hover { filter: brightness(1.1); }
+body .sticker-item { cursor: pointer; }
+
+
+/* ---------- Mode sombre : compléments ---------- */
+html[data-theme="dark"] body .conversation:hover { background-color: #273449 !important; }
+html[data-theme="dark"] body .conversation.active-conversation { background-color: #1e3a8a55 !important; }
+html[data-theme="dark"] body .conversation-info h3, html[data-theme="dark"] body .x-contact-name { color: #f1f5f9; }
+html[data-theme="dark"] body .conversation-info p, html[data-theme="dark"] body .x-contact-sub, html[data-theme="dark"] body .last-msg-time { color: #94a3b8; }
+html[data-theme="dark"] .x-contact-card { background: #1e293b !important; border-color: #334155 !important; }
+html[data-theme="dark"] body .chat-area .messages { background: #0b1220 !important; }
+html[data-theme="dark"] body .chat-actions button, html[data-theme="dark"] body .btn-back-mobile, html[data-theme="dark"] body .message-form .attachment-button, html[data-theme="dark"] body .message-form .emoji-button { color: #cbd5e1; }
+html[data-theme="dark"] body .chat-actions button:hover, html[data-theme="dark"] body .btn-back-mobile:hover, html[data-theme="dark"] body .message-form .attachment-button:hover, html[data-theme="dark"] body .message-form .emoji-button:hover { background: #273449; }
+html[data-theme="dark"] body .encryption-notice { background: #3b3417; color: #fde68a; }
+html[data-theme="dark"] body .message-form input[type="text"]:focus { background: #0f172a !important; }
+
+/* ---------- Message impossible à déchiffrer (groupe) ---------- */
+body .message.x-undecryptable p { font-style: italic; opacity: .75; }
+
+/* ---------- Réactivité mobile : la barre de saisie doit toujours rester visible ---------- */
+html, body { height: 100%; }
+/* Le vrai conteneur racine du HTML est .dashboard (pas #appLayout, qui n'existe pas dans cette page) */
+body .dashboard { height: var(--x-app-vh, 100vh); max-height: var(--x-app-vh, 100vh); }
+body .chat-area, body .conversation-list { height: 100%; }
+body .chat-area .messages { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+body .chat-header, body .message-form { flex: 0 0 auto; }
+body .message-form { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+body .chat-user h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 42vw; }
+@media (max-width: 768px) {
+    /* style.css fixe .chat-area/.conversation-list à 100vh avec !important en mode plein écran
+       mobile ; 100vh ne rétrécit pas quand le clavier s'ouvre (bug Android connu), donc on
+       reprend la main avec la hauteur réellement visible (--x-app-vh, mise à jour en JS). */
+    body .chat-area { height: var(--x-app-vh, 100vh) !important; }
+    body .conversation-list { height: var(--x-app-vh, 100vh) !important; }
+}
+@media (max-width: 480px) {
+    body .chat-header { padding: 8px 10px; gap: 8px; }
+    body .chat-user h2 { max-width: 34vw; font-size: 15px; }
+    body .chat-actions { gap: 0; }
+    body .chat-actions button { width: 34px; height: 34px; font-size: 14px; }
+    body .message-form { padding: 8px 10px; }
+    body .message-form input[type="text"] { height: 40px; font-size: 14px; }
+}
+
+/* ---------- Réactivité mobile : onglets Contacts / Appareils / Paramètres ---------- */
+@media (max-width: 480px) {
+    #tab-contacts, #tab-devices, #tab-settings { padding: 14px !important; }
+    .x-qr-card { padding: 14px !important; max-width: 100% !important; }
+    .x-qr-box { min-width: 0 !important; width: fit-content; max-width: 100%; padding: 8px !important; }
+    .x-qr-box img, .x-qr-box canvas, .x-qr-box table { max-width: 100% !important; height: auto !important; }
+}
 `;
+
+// Corrige un problème classique sur Android : quand le clavier s'ouvre, la fenêtre visible
+// (visualViewport) rétrécit, mais la page garde souvent sa hauteur d'origine — la barre de
+// saisie se retrouve alors poussée hors de l'écran, sous le clavier. On force la hauteur
+// réelle de l'app à suivre celle de la zone effectivement visible.
+function setupMobileViewportFix() {
+    const root = document.documentElement;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const apply = () => {
+        root.style.setProperty("--x-app-vh", `${vv.height}px`);
+        // Sur certains navigateurs, la page défile derrière le clavier : on recale en haut.
+        if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
+    };
+    apply();
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+}
 
 function injectStyles() {
     if (document.getElementById("xStyles")) return;
@@ -268,17 +387,6 @@ function injectStyles() {
     document.head.appendChild(style);
 }
 injectStyles();
-
-// Police d'icônes (Font Awesome) : chargée ici si la page HTML ne la fournit pas déjà
-function ensureIconFont() {
-    if (document.querySelector('link[href*="font-awesome"], link[href*="fontawesome"], script[src*="fontawesome"]')) return;
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css";
-    link.crossOrigin = "anonymous";
-    document.head.appendChild(link);
-}
-ensureIconFont();
 
 // ---------- Mode sombre (préférence par appareil, stockée en local) ----------
 const THEME_KEY = "chatThemePref";
@@ -366,40 +474,64 @@ const toDate = (ts) => (ts && typeof ts.toDate === "function" ? ts.toDate() : ts
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const dayDiff = (d, now = new Date()) => Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
-// Initiales : « Jean Dupont » -> JD, « alice » -> AL
-function initialsOf(name) {
-    const clean = (name || "").toString().trim();
-    if (!clean) return "U";
-    const words = clean.split(/\s+/).filter(Boolean);
-    const out = words.length >= 2 ? words[0][0] + words[1][0] : clean.substring(0, 2);
-    return out.toUpperCase();
-}
-const displayNameOf = (u) => (u && (u.username || u.userName || u.displayName || u.name || u.nom || (u.email ? u.email.split("@")[0] : ""))) || "Utilisateur";
-
-// Avatars : couleur stable par utilisateur (initiales) / icône « groupe » pour les groupes
-const AVATAR_COLORS = ["#2563eb", "#7c3aed", "#db2777", "#ea580c", "#059669", "#0891b2", "#4f46e5", "#c026d3", "#0d9488", "#b45309"];
+const initialsOf = (name) => {
+    const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "U";
+    const first = (w) => Array.from(w);
+    if (parts.length === 1) return first(parts[0]).slice(0, 2).join("").toUpperCase();
+    return (first(parts[0])[0] + first(parts[parts.length - 1])[0]).toUpperCase();
+};
+const getChatId = (a, b) => [a, b].sort().join("_");
+// ---------- Avatars : initiales colorées pour un contact, icône dédiée pour un groupe ----------
+const AVATAR_COLORS = ["#2563eb", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#ca8a04", "#059669", "#0891b2", "#4f46e5", "#0d9488"];
 function avatarColor(seed) {
     let h = 0;
-    const s = (seed || "").toString();
+    const s = String(seed || "");
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
     return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
-function paintUserAvatar(el, name) {
+function paintAvatar(el, name, isGroup = false) {
     if (!el) return;
-    el.classList.remove("group", "x-avatar-group");
-    el.classList.add("avatar", "x-avatar-user");
-    el.textContent = initialsOf(name);
-    el.style.setProperty("background", avatarColor(name), "important");
-}
-function paintGroupAvatar(el) {
-    if (!el) return;
-    el.classList.remove("x-avatar-user");
-    el.classList.add("avatar", "group", "x-avatar-group");
-    el.style.removeProperty("background");
+    const key = (isGroup ? "g:" : "u:") + (name || "");
+    if (el.dataset.paint === key) return;
+    el.dataset.paint = key;
+    el.className = "avatar x-av" + (isGroup ? " x-av-group" : "");
     el.textContent = "";
-    el.appendChild(groupAvatarIcon());
+    if (isGroup) {
+        el.style.background = "";
+        el.appendChild(ico("fa-solid fa-users"));
+        el.setAttribute("aria-label", "Groupe");
+    } else {
+        el.style.background = avatarColor(name);
+        el.textContent = initialsOf(name);
+    }
 }
-const getChatId = (a, b) => [a, b].sort().join("_");
+
+// ---------- Icônes du menu latéral : vraies icônes Font Awesome à la place d'éventuels emojis ----------
+const MENU_ICONS = {
+    conversations: "fa-solid fa-message",
+    contacts: "fa-solid fa-address-book",
+    pinned: "fa-solid fa-thumbtack",
+    devices: "fa-solid fa-mobile-screen-button",
+    settings: "fa-solid fa-gear"
+};
+const EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu;
+function upgradeMenuIcons() {
+    qsa(".sidebar-menu .menu-item[data-tab]").forEach((item) => {
+        if (item.dataset.iconDone) return;
+        item.dataset.iconDone = "1";
+        const cls = MENU_ICONS[item.dataset.tab];
+        if (!cls || item.querySelector('i[class*="fa-"]')) return;
+
+        const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+        const texts = [];
+        while (walker.nextNode()) texts.push(walker.currentNode);
+        texts.forEach((t) => { t.nodeValue = t.nodeValue.replace(EMOJI_RE, ""); });
+        qsa("span, div", item).forEach((n) => { if (!n.children.length && !n.textContent.trim() && !n.querySelector("i")) n.remove(); });
+        item.insertBefore(ico(cls), item.firstChild);
+    });
+}
+
 const normalize = (s) => (s || "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
 function fullDateTime(d) {
@@ -749,10 +881,32 @@ async function getPublicKey(uid) {
 }
 
 async function decryptMessage(docId, msg, isMine) {
+    const key = getMyPrivateKey();
+
+    // Nouveau format (chiffrement hybride, sans limite de taille)
+    if (msg.cipherText !== undefined) {
+        if (!msg.cipherText) return "";
+        if (typeof E2EE === "undefined" || !key) return "Message chiffré";
+
+        const cacheKey = `${docId}:${msg.cipherText}`;
+        const cached = decryptCache.get(docId);
+        if (cached && cached.cipher === cacheKey && cached.key === key) return cached.clear;
+
+        let clear;
+        try {
+            clear = await E2EE.decryptHybrid(msg, currentUser.uid, key);
+        } catch (err) {
+            console.error("Erreur de déchiffrement :", err);
+            clear = "Message chiffré";
+        }
+        decryptCache.set(docId, { cipher: cacheKey, clear, key });
+        return clear;
+    }
+
+    // Rétrocompatibilité : anciens messages chiffrés directement en RSA-OAEP (avant ce correctif)
     const cipher = isMine ? (msg.textForSender || msg.text) : msg.text;
     if (!cipher) return "";
 
-    const key = getMyPrivateKey();
     if (typeof E2EE !== "undefined" && key) {
         const cached = decryptCache.get(docId);
         if (cached && cached.cipher === cipher && cached.key === key) return cached.clear;
@@ -761,7 +915,7 @@ async function decryptMessage(docId, msg, isMine) {
             clear = await E2EE.decryptText(cipher, key);
         } catch (err) {
             console.error("Erreur de déchiffrement :", err);
-            clear = "[Message chiffré]";
+            clear = "Message chiffré";
         }
         decryptCache.set(docId, { cipher, clear, key });
         return clear;
@@ -770,14 +924,13 @@ async function decryptMessage(docId, msg, isMine) {
 }
 
 async function encryptForBoth(rawText, peerUid) {
-    let textForReceiver = rawText;
-    let textForSender = rawText;
-    if (typeof E2EE !== "undefined") {
-        const [receiverKey, senderKey] = await Promise.all([getPublicKey(peerUid), getPublicKey(currentUser.uid)]);
-        if (receiverKey) textForReceiver = await E2EE.encryptText(rawText, receiverKey);
-        if (senderKey) textForSender = await E2EE.encryptText(rawText, senderKey);
+    const [receiverKey, senderKey] = await Promise.all([getPublicKey(peerUid), getPublicKey(currentUser.uid)]);
+    if (typeof E2EE === "undefined" || !E2EE.encryptHybrid) {
+        throw new Error("Module de chiffrement indisponible : le message n'a pas été envoyé.");
     }
-    return { textForReceiver, textForSender };
+    const { iv, cipherText, keys } = await E2EE.encryptHybrid(rawText, { [currentUser.uid]: senderKey, [peerUid]: receiverKey });
+    if (!keys[currentUser.uid]) throw new Error("Impossible de chiffrer le message pour vous-même.");
+    return { iv, cipherText, keys };
 }
 
 // INITIALISATION ET RESTAURATION DES CLÉS E2EE
@@ -785,18 +938,18 @@ async function initUserKeys(user) {
     try {
         const localKey = getMyPrivateKey();
         
-        // 1) Si la clé privée existe déjà sur l'appareil (localStorage), ON L'UTILISE DIRECTEMENT
+        // 1 Si la clé privée existe déjà sur l'appareil (localStorage), ON L'UTILISE DIRECTEMENT
         if (localKey) {
-            console.log("Clé privée trouvée en cache local.");
+            console.log("Clé privée trouvée en cache local !");
             return localKey;
         }
 
-        // 2) Si absente (ex: première ouverture sans repasser par login), on charge Firestore
+        // 2 Si absente (ex: première ouverture sans repasser par login), on charge Firestore
         const userDocRef = db.collection("users").doc(user.uid);
         const doc = await userDocRef.get();
 
         if (doc.exists && doc.data()?.encryptedPrivateKey) {
-            console.warn("La clé privée locale est absente. Elle sera restaurée lors de la prochaine connexion avec mot de passe.");
+            console.log("La clé privée locale est absente. Elle sera restaurée lors de la prochaine connexion avec mot de passe.");
         }
         
         return null;
@@ -836,10 +989,6 @@ function cleanupSession() {
     groupState.forEach((s) => s.unsubs.forEach((fn) => fn()));
     groupState.clear();
     contactCards.clear();
-    const convBox = qs(".conversations");
-    if (convBox) convBox.textContent = "";
-    const contactsBox = document.getElementById("contacts-list");
-    if (contactsBox) contactsBox.textContent = "";
     usersById.clear();
     decryptCache.clear();
     publicKeyCache.clear();
@@ -915,6 +1064,7 @@ function loadUserProfile(user) {
 // 10. NAVIGATION PAR ONGLETS & RECHERCHE
 // ============================================================================
 function setupTabNavigation() {
+    upgradeMenuIcons();
     const menuItems = qsa(".sidebar-menu .menu-item");
 
     menuItems.forEach((item) => {
@@ -1015,12 +1165,14 @@ auth.onAuthStateChanged((user) => {
         currentUser = user;
 
         const showApp = () => {
-            // 💡 1. Initialisation immédiate des clés RSA/AES propres au nouvel utilisateur
-            if (typeof initUserKeys === "function") {
-                initUserKeys(user); 
-            }
+            const authContainer = document.getElementById("authContainer");
+            const appLayout = document.getElementById("appLayout");
 
-            // 💡 2. Chargement des données de l'application
+            if (authContainer) authContainer.style.display = "none";
+            if (appLayout) appLayout.style.display = "flex";
+
+            cleanupSession();
+            resetListsDom();
             setupTabNavigation();
             setupSearch();
             loadUserProfile(user);
@@ -1030,10 +1182,11 @@ auth.onAuthStateChanged((user) => {
             loadContacts();
             listenGroups(user.uid);
             mountGroupFab();
-
-            if (typeof initPeerJS === "function") initPeerJS(user.uid);
-            if (typeof startPresence === "function") startPresence(user.uid);
-            if (typeof requestNotificationPermissionOnce === "function") requestNotificationPermissionOnce();
+            initPeerJS(user.uid);
+            initUserKeys(user);
+            startPresence(user.uid);
+            requestNotificationPermissionOnce();
+            setupMobileViewportFix();
         };
 
         if (document.readyState === "loading") {
@@ -1042,22 +1195,58 @@ auth.onAuthStateChanged((user) => {
             showApp();
         }
     } else {
-        // 💡 3. Déconnexion : On nettoie tout le cache de chiffrement local pour éviter d'infecter la session suivante
-        if (typeof cleanupSession === "function") cleanupSession();
-        
+        cleanupSession();
         currentUser = null;
+        const authContainer = document.getElementById("authContainer");
+        const appLayout = document.getElementById("appLayout");
 
-        // 💡 4. Vrai renvoi vers la page de connexion au lieu de chercher un HTML inexistant
-        if (!window.location.pathname.endsWith("login.html")) {
+        if (appLayout) appLayout.style.display = "none";
+        if (authContainer) {
+            authContainer.style.display = "block";
+        } else if (!/\/(login|signup)\.html$/i.test(window.location.pathname)) {
+            // Cette page (le tableau de bord) n'a pas d'écran de connexion intégré :
+            // personne ne doit pouvoir la consulter sans être connecté.
             window.location.href = "login.html";
         }
     }
 });
+
 // ============================================================================
 // 12. CONTACTS & LISTE DES CONVERSATIONS
 // ============================================================================
 
-// Chargement des utilisateurs : appelé UNE fois la connexion établie (voir showApp)
+// --- Conteneurs de listes (créés à la volée s'ils manquent dans le HTML) ---
+function getConversationsContainer() {
+    let c = qs(".conversations");
+    if (!c) {
+        const host = qs(".conversation-list");
+        if (!host) return null;
+        c = mk("div", { class: "conversations" });
+        host.appendChild(c);
+    }
+    return c;
+}
+
+function getContactsContainer() {
+    let c = document.getElementById("contacts-list");
+    if (!c) {
+        const host = document.getElementById("tab-contacts");
+        if (!host) return null;
+        c = mk("div", { id: "contacts-list" });
+        host.appendChild(c);
+    }
+    return c;
+}
+
+// Vide les listes avant de (re)charger une session
+function resetListsDom() {
+    const conv = getConversationsContainer();
+    const contacts = getContactsContainer();
+    if (conv) conv.textContent = "";
+    if (contacts) contacts.textContent = "";
+}
+
+// Écoute la collection « users » : alimente la liste des conversations ET l'onglet Contacts
 function loadContacts() {
     if (unsubscribeUsers) { unsubscribeUsers(); unsubscribeUsers = null; }
     let first = true;
@@ -1067,21 +1256,24 @@ function loadContacts() {
             const uid = change.doc.id;
             const userData = change.doc.data() || {};
 
-            // Mon propre compte : on met seulement à jour la barre latérale
+            // Mon propre compte : mise à jour de la barre latérale uniquement
             if (currentUser && uid === currentUser.uid) {
-                const myName = userData.username || currentUser.displayName || "Utilisateur";
+                const myRealName = userData.username || currentUser.displayName || "Utilisateur";
                 usersById.set(uid, { ...userData, uid });
 
                 const sidebarName = qs(".sidebar-profile .profile-info h4");
-                if (sidebarName) sidebarName.textContent = myName;
+                if (sidebarName) sidebarName.textContent = myRealName;
                 const sidebarSub = qs(".sidebar-profile .profile-info p, .sidebar-profile .profile-email, #sidebarUserEmail");
                 if (sidebarSub) sidebarSub.innerHTML = '<span class="status-dot online"></span> En ligne';
                 const sidebarAvatar = qs(".sidebar-profile .profile-avatar");
-                if (sidebarAvatar) sidebarAvatar.textContent = initialsOf(myName);
+                if (sidebarAvatar) sidebarAvatar.textContent = initialsOf(myRealName);
                 return;
             }
 
-            if (change.type === "removed") { removeUser(uid); return; }
+            if (change.type === "removed") {
+                removeUser(uid);
+                return;
+            }
 
             const user = { ...userData, uid };
             usersById.set(uid, user);
@@ -1095,8 +1287,7 @@ function loadContacts() {
             }
         });
 
-        sortContacts();
-        updateEmptyState();
+        checkAndShowEmptyState();
         applySearchFilter();
         scheduleSort();
 
@@ -1106,47 +1297,32 @@ function loadContacts() {
         }
     }, (err) => {
         console.error("Erreur chargement des contacts :", err);
-        const box = document.getElementById("contacts-list");
-        if (box && contactCards.size === 0) {
-            box.textContent = "";
-            box.appendChild(mk("p", {
-                class: "x-empty-users",
-                style: "padding: 20px; color: #dc2626; font-size: 13px; text-align: center;",
-                text: "Impossible de charger les contacts (" + (err.code || "erreur") + "). Vérifiez les règles Firestore : la collection « users » doit être lisible par les utilisateurs connectés."
-            }));
-        }
+        const message = err && err.code === "permission-denied"
+            ? "Accès refusé : vérifiez les règles Firestore de la collection « users »."
+            : "Impossible de charger les contacts. Vérifiez votre connexion.";
+        const c = getContactsContainer();
+        if (c && c.children.length === 0) c.appendChild(mk("p", { class: "x-empty-users", text: message }));
+        showToast("Contacts indisponibles", message);
     });
 }
 
-// Contacts triés par ordre alphabétique
-function sortContacts() {
-    const box = document.getElementById("contacts-list");
-    if (!box) return;
-    Array.from(contactCards.values())
-        .sort((x, y) => (x.name || "").localeCompare(y.name || "", "fr", { sensitivity: "base" }))
-        .forEach((c) => box.appendChild(c.el));
-}
+function checkAndShowEmptyState() {
+    qsa(".x-empty-users").forEach((n) => n.remove());
 
-function checkAndShowEmptyState(convContainer, contactsContainer) {
-    document.querySelectorAll(".x-empty-users").forEach((n) => n.remove());
-
-    const cContainer = convContainer || document.querySelector(".conversations");
-    const ctContainer = contactsContainer || document.getElementById("contacts-list");
-
-    [cContainer, ctContainer].forEach((cnt) => {
-        if (cnt && cnt.querySelectorAll("article, div").length === 0) {
-            const p = document.createElement("p");
-            p.className = "x-empty-users";
-            p.style.cssText = "padding: 20px; color: #94a3b8; font-size: 13px; text-align: center;";
-            p.textContent = "Aucun utilisateur disponible.";
-            cnt.appendChild(p);
+    const lists = [
+        [getConversationsContainer(), "Aucune conversation pour le moment."],
+        [getContactsContainer(), "Aucun contact disponible."]
+    ];
+    lists.forEach(([cnt, text]) => {
+        if (cnt && cnt.querySelectorAll(":scope > article, :scope > div").length === 0) {
+            cnt.appendChild(mk("p", { class: "x-empty-users", text }));
         }
     });
 }
 function updateEmptyState() { checkAndShowEmptyState(); }
 
 function addConversation(user) {
-    const container = qs(".conversations") || document.querySelector(".conversations");
+    const container = getConversationsContainer();
     if (!container) return;
 
     // Vérification basée sur le DOM physique
@@ -1159,8 +1335,8 @@ function addConversation(user) {
     const safeName = user.username || user.userName || user.displayName || user.name || (user.email ? user.email.split("@")[0] : "Utilisateur");
     const safeSearch = normalize(safeName);
 
-    const avatarEl = mk("div", { class: "avatar" });
-    paintUserAvatar(avatarEl, safeName);
+    const avatarEl = mk("div", { class: "avatar x-av" });
+    paintAvatar(avatarEl, safeName);
     const nameEl = mk("h3", { text: safeName });
     const textEl = mk("p", { class: "last-msg-text", text: "Chargement..." });
     const timeEl = mk("span", { class: "last-msg-time" });
@@ -1290,9 +1466,10 @@ function refreshConvUI(s) {
     const unread = blocked || isOpen ? 0 : s.unread;
 
     // NOM D'UTILISATEUR SÉCURISÉ :
-    const shownName = displayNameOf(s.user);
+    const rawName = s.user.username || s.user.userName || s.user.displayName || s.user.name || s.user.nom;
+    const shownName = rawName || (s.user.email ? s.user.email.split("@")[0] : "Utilisateur");
     s.nameEl.textContent = shownName;
-    paintUserAvatar(s.avatarEl, shownName);
+    paintAvatar(s.avatarEl, shownName);
 
     s.nameEl.style.fontWeight = unread > 0 ? "800" : "600";
     s.textEl.style.fontWeight = unread > 0 ? "700" : "normal";
@@ -1379,20 +1556,23 @@ function updateTotalUnread() {
 
 function updateUserEntry(user) {
     // 1. Mise à jour Conversation
-    const state = convState.get(user.uid);
-    if (state) {
+    if (typeof convState !== "undefined" && convState.has(user.uid)) {
+        const state = convState.get(user.uid);
         state.user = { ...state.user, ...user };
-        refreshConvUI(state);
+        if (typeof refreshConvUI === "function") refreshConvUI(state);
     }
 
     // 2. Mise à jour Carte Contact
-    const card = contactCards.get(user.uid);
-    if (card) {
-        const name = displayNameOf(user);
-        card.name = name;
-        card.nameEl.textContent = name;
-        paintUserAvatar(card.avatarEl, name);
-        card.el.dataset.search = normalize(name);
+    if (typeof contactCards !== "undefined" && contactCards.has(user.uid)) {
+        const card = contactCards.get(user.uid);
+        const safeName = user.username || user.userName || user.displayName || user.name || (user.email ? user.email.split("@")[0] : "Utilisateur");
+        
+        if (card.nameEl) card.nameEl.textContent = safeName;
+        paintAvatar(card.avatarEl, safeName);
+        if (card.subEl) card.subEl.textContent = user.email || "";
+        if (card.el && typeof normalize === "function") {
+            card.el.dataset.search = normalize(safeName);
+        }
     }
 }
 
@@ -1407,28 +1587,24 @@ function removeUser(uid) {
 }
 
 function addContactCard(user) {
-    const container = document.getElementById("contacts-list") || qs("#contacts-list");
+    const container = getContactsContainer();
     if (!container) return;
+    if (container.querySelector(`[data-uid="${user.uid}"]`)) return;
 
-    const known = contactCards.get(user.uid);
-    if (known && known.el.isConnected) return;
+    const safeName = user.username || user.userName || user.displayName || user.name || (user.email ? user.email.split("@")[0] : "Utilisateur");
 
-    const name = displayNameOf(user);
-    const avatarEl = mk("div", { class: "avatar" });
-    paintUserAvatar(avatarEl, name);
-    const nameEl = mk("h4", { class: "x-contact-name", text: name });
-    const mailEl = mk("span", { class: "x-contact-mail", text: user.email || "" });
+    const avatarEl = mk("div", { class: "avatar x-av" });
+    paintAvatar(avatarEl, safeName);
+    const nameEl = mk("h4", { class: "x-contact-name", text: safeName });
+    const subEl = mk("span", { class: "x-contact-sub", text: user.email || "" });
 
-    const el = mk("div", { class: "x-contact", dataset: { uid: user.uid, search: normalize(name) } },
-        mk("div", { class: "x-contact-main" },
-            avatarEl,
-            mk("div", { class: "x-contact-text" }, nameEl, mailEl)
-        ),
-        mk("button", { class: "x-contact-btn btn-chat-start", type: "button", onclick: () => openChatWith(user.uid) },
+    const el = mk("div", { class: "x-contact-card", dataset: { uid: user.uid, search: normalize(safeName) } },
+        mk("div", { class: "x-contact-main" }, avatarEl, mk("div", { class: "x-contact-text" }, nameEl, subEl)),
+        mk("button", { class: "btn-chat-start x-contact-btn", type: "button", onclick: () => openChatWith(user.uid) },
             ico("fa-solid fa-comment"), " Discuter")
     );
 
-    contactCards.set(user.uid, { el, nameEl, avatarEl, name });
+    contactCards.set(user.uid, { el, nameEl, avatarEl, subEl });
     container.appendChild(el);
 }
 // Ouvre la discussion avec un utilisateur (liste, contacts, QR, notification…)
@@ -1465,6 +1641,48 @@ function consumePendingChat() {
 // ============================================================================
 // Les messages de groupe ne sont PAS chiffrés de bout en bout (contrairement aux
 // discussions 1:1) : le texte est stocké en clair dans groups/{id}/messages.
+// Compteur de non lus des groupes : calculé localement à partir d'un marqueur de lecture,
+// sans écrire dans le document du groupe (évite les erreurs de droits Firestore).
+// Fenêtre d'historique donnée à un nouveau membre lors de son ajout à un groupe
+// (comme Telegram : un nouveau membre voit les X derniers jours, pas l'intégralité).
+// Changez cette valeur pour ajuster (7 = une semaine, 30 = un mois...).
+const GROUP_HISTORY_WINDOW_DAYS = 30;
+
+// Cache mémoire : clé de groupe déjà déchiffrée (évite de refaire l'opération RSA à chaque écran)
+const groupKeyCache = new Map(); // groupId -> clé AES en clair (base64)
+const groupTextCache = new Map(); // "docId:cipherText" -> { text, legacy, failed }
+
+// Donne la clé de groupe en clair, en la déchiffrant une seule fois (RSA) puis en la mettant en cache.
+async function getGroupKey(chat) {
+    if (!chat || !chat.id) return null;
+    if (groupKeyCache.has(chat.id)) return groupKeyCache.get(chat.id);
+
+    const myWrappedKey = chat.groupKeys && chat.groupKeys[currentUser.uid];
+    const myPrivateKey = getMyPrivateKey();
+    if (!myWrappedKey || !myPrivateKey || typeof E2EE === "undefined" || !E2EE.unwrapGroupKey) return null;
+
+    try {
+        const raw = await E2EE.unwrapGroupKey(myWrappedKey, myPrivateKey);
+        groupKeyCache.set(chat.id, raw);
+        return raw;
+    } catch (err) {
+        console.error("Impossible de déchiffrer la clé du groupe :", err);
+        return null;
+    }
+}
+
+const groupReadKey = (id) => `groupReadAt_${currentUser ? currentUser.uid : ""}_${id}`;
+function getGroupReadAt(id) {
+    try {
+        const v = localStorage.getItem(groupReadKey(id));
+        return v === null ? null : Number(v) || 0;
+    } catch (e) { return null; }
+}
+function setGroupReadAt(id, ms) {
+    try { localStorage.setItem(groupReadKey(id), String(ms)); } catch (e) { /* stockage indisponible */ }
+}
+const tsMs = (msg) => { const d = toDate(msg && msg.timestamp); return d ? d.getTime() : 0; };
+
 function groupAvatarIcon() {
     return ico("fa-solid fa-users");
 }
@@ -1490,11 +1708,11 @@ function listenGroups(uid) {
 
 function addGroupConversation(group) {
     if (groupState.has(group.id)) return;
-    const container = qs(".conversations");
+    const container = getConversationsContainer();
     if (!container) return;
 
-    const avatarEl = mk("div", { class: "avatar" });
-    paintGroupAvatar(avatarEl);
+    const avatarEl = mk("div", { class: "avatar x-av x-av-group" });
+    paintAvatar(avatarEl, group.name, true);
     const nameEl = mk("h3", { text: group.name || "Groupe" });
     const textEl = mk("p", { class: "last-msg-text", text: "Chargement..." });
     const timeEl = mk("span", { class: "last-msg-time" });
@@ -1509,6 +1727,7 @@ function addGroupConversation(group) {
 
     const state = {
         id: group.id, name: group.name, members: group.members || [], createdBy: group.createdBy,
+        groupKeys: group.groupKeys || {}, historyFrom: group.historyFrom || {},
         el, avatarEl, nameEl, textEl, timeEl, badgeEl,
         unread: 0, lastTs: 0, timeText: "", preview: "Chargement...",
         msgSeq: 0, initialized: false, unsubs: []
@@ -1522,17 +1741,6 @@ function addGroupConversation(group) {
             (err) => console.error("Erreur écoute messages de groupe :", err)
         )
     );
-    state.unsubs.push(
-        groupRef.onSnapshot((doc) => {
-            if (!doc.exists) return;
-            const key = `unreadCount_${currentUser.uid}`;
-            state.unread = Math.max(0, doc.data()[key] || 0);
-            if (state.unread > 0 && activeChatUserId === group.id && isActiveChatVisible()) markActiveChatRead();
-            refreshGroupUI(state);
-            updateTotalUnread();
-        }, (err) => console.error("Erreur écoute groupe :", err))
-    );
-
     container.appendChild(el);
     refreshGroupUI(state);
 }
@@ -1545,12 +1753,32 @@ async function handleGroupLastMessages(state, snap) {
     const docs = snap.docs.filter((d) => !(Array.isArray(d.data().deletedFor) && d.data().deletedFor.includes(me)));
     const last = docs[0];
 
+    // Non lus = messages des autres plus récents que mon marqueur de lecture
+    const isOpenNow = activeChatUserId === state.id && isActiveChatVisible();
+    const newestTs = last ? tsMs(last.data({ serverTimestamps: "estimate" })) : 0;
+    let readAt = getGroupReadAt(state.id);
+    if (readAt === null) {
+        // Première fois sur cet appareil : l'historique existant est considéré comme lu
+        readAt = docs.length ? newestTs : 0;
+        setGroupReadAt(state.id, readAt);
+    }
+    if (isOpenNow && newestTs > readAt) {
+        readAt = newestTs;
+        setGroupReadAt(state.id, readAt);
+    }
+    state.unread = docs.filter((d) => {
+        const m = d.data({ serverTimestamps: "estimate" });
+        return m.senderId !== me && tsMs(m) > readAt;
+    }).length;
+
     if (!last) {
+        state.unread = 0;
         state.preview = "Aucun message";
         state.timeText = "";
         state.lastTs = 0;
         state.initialized = true;
         refreshGroupUI(state);
+        updateTotalUnread();
         scheduleSort();
         return;
     }
@@ -1578,6 +1806,7 @@ async function handleGroupLastMessages(state, snap) {
     const who = msg.senderId === me ? "Vous" : (msg.senderName || "?");
     state.preview = `${who} : ${(msg.text || "").replace(/\s+/g, " ")}`;
     refreshGroupUI(state);
+    updateTotalUnread();
     scheduleSort();
 }
 
@@ -1603,12 +1832,16 @@ function updateGroupEntry(group) {
     s.name = group.name;
     s.members = group.members || [];
     s.createdBy = group.createdBy;
-    paintGroupAvatar(s.avatarEl);
+    s.groupKeys = group.groupKeys || {};
+    s.historyFrom = group.historyFrom || {};
+    paintAvatar(s.avatarEl, group.name, true);
     s.el.dataset.search = normalize(group.name);
     refreshGroupUI(s);
     if (activeChat && activeChat.isGroup && activeChat.id === group.id) {
         activeChat.name = group.name;
         activeChat.members = group.members || [];
+        activeChat.groupKeys = group.groupKeys || {};
+        activeChat.historyFrom = group.historyFrom || {};
         const h2 = qs(".chat-user h2");
         if (h2) h2.textContent = group.name || "Groupe";
         updateGroupHeaderInfo();
@@ -1650,6 +1883,7 @@ async function selectGroupChat(group) {
     const chat = {
         uid: group.id, id: group.id, isGroup: true,
         name: group.name, members: group.members || [], createdBy: group.createdBy,
+        groupKeys: group.groupKeys || {}, historyFrom: group.historyFrom || {},
         docs: [], lastSnapshot: null, newIds: new Set(), captured: false,
         msgIndex: new Map(), rendered: false, lastRenderedId: null
     };
@@ -1661,12 +1895,17 @@ async function selectGroupChat(group) {
     const chatHeaderName = qs(".chat-user h2");
     if (chatHeaderName) chatHeaderName.textContent = group.name || "Groupe";
     const chatHeaderAvatar = qs(".chat-user .avatar");
-    if (chatHeaderAvatar) paintGroupAvatar(chatHeaderAvatar);
+    paintAvatar(chatHeaderAvatar, group.name, true);
     updateGroupHeaderInfo();
     updateComposerState();
 
-    unsubscribeMessages = db.collection("groups").doc(group.id).collection("messages")
-        .orderBy("timestamp", "asc")
+    // Fenêtre d'historique : si j'ai rejoint le groupe après coup, je ne peux (et ne dois) demander
+    // que les messages à partir de ma date d'entrée. Les membres fondateurs n'ont pas cette limite.
+    let messagesQuery = db.collection("groups").doc(group.id).collection("messages").orderBy("timestamp", "asc");
+    const myHistoryFrom = chat.historyFrom && chat.historyFrom[currentUser.uid];
+    if (myHistoryFrom) messagesQuery = messagesQuery.where("timestamp", ">=", toDate(myHistoryFrom) || new Date(0));
+
+    unsubscribeMessages = messagesQuery
         .onSnapshot((snapshot) => {
             if (activeChat !== chat) return;
             chat.lastSnapshot = snapshot;
@@ -1686,10 +1925,37 @@ function updateGroupHeaderInfo() {
     if (btnVideo) btnVideo.style.display = "none";
 }
 
-function buildGroupMessageEl(entry) {
+// Déchiffre un message de groupe (avec rétrocompatibilité pour les anciens messages envoyés en clair).
+async function decryptGroupMsg(docId, msg, chat) {
+    if (msg.cipherText === undefined) return { text: msg.text || "", legacy: true, failed: false };
+    if (!msg.cipherText) return { text: "", legacy: false, failed: false };
+
+    const groupKey = await getGroupKey(chat);
+    if (typeof E2EE === "undefined" || !E2EE.decryptGroupText || !groupKey) {
+        return { text: "Message chiffré", legacy: false, failed: true };
+    }
+
+    const cacheKey = `${docId}:${msg.cipherText}`;
+    if (groupTextCache.has(cacheKey)) return groupTextCache.get(cacheKey);
+
+    let result;
+    try {
+        const text = await E2EE.decryptGroupText(msg, groupKey);
+        result = { text, legacy: false, failed: false };
+    } catch (err) {
+        console.error("Erreur de déchiffrement (groupe) :", err);
+        result = { text: "Message indéchiffrable sur cet appareil", legacy: false, failed: true };
+    }
+    groupTextCache.set(cacheKey, result);
+    return result;
+}
+
+function buildGroupMessageEl(entry, chat, decrypted) {
     const { doc, msg } = entry;
     const isMine = msg.senderId === currentUser.uid;
+    const isNew = !isMine && !!chat && chat.newIds.has(doc.id);
     const date = toDate(msg.timestamp);
+    const { text: shownText, failed } = decrypted || { text: msg.text || "", failed: false };
 
     const timeNode = mk("time", { title: date ? fullDateTime(date) : "" },
         msg.edited ? mk("span", { class: "x-edited", text: "modifié" }) : null,
@@ -1697,9 +1963,9 @@ function buildGroupMessageEl(entry) {
         isMine ? ico("fa-solid fa-check x-tick", "Envoyé") : null
     );
 
-    return mk("div", { class: `message ${isMine ? "sent" : "received"}`, dataset: { id: doc.id } },
+    return mk("div", { class: `message ${isMine ? "sent" : "received"}${isNew ? " x-new" : ""}${failed ? " x-undecryptable" : ""}`, dataset: { id: doc.id } },
         !isMine ? mk("span", { class: "x-sender-name", text: msg.senderName || "?" }) : null,
-        mk("p", { text: msg.text || "" }),
+        mk("p", { text: shownText }),
         timeNode,
         mk("button", { type: "button", class: "x-msg-menu-btn", title: "Options du message", "aria-label": "Options du message" },
             ico("fa-solid fa-chevron-down"))
@@ -1717,9 +1983,21 @@ async function renderGroupMessages(snapshot) {
         .filter((e) => !(Array.isArray(e.msg.deletedFor) && e.msg.deletedFor.includes(me)));
     chat.docs = snapshot.docs;
 
-    chat.msgIndex = new Map(entries.map((e) => [e.doc.id, {
-        isMine: e.msg.senderId === me, text: e.msg.text || "", ts: toDate(e.msg.timestamp)?.getTime()
+    const decodedList = await Promise.all(entries.map((e) => decryptGroupMsg(e.doc.id, e.msg, chat)));
+    if (chat !== activeChat) return;
+
+    chat.msgIndex = new Map(entries.map((e, i) => [e.doc.id, {
+        isMine: e.msg.senderId === me, text: decodedList[i].text, ts: toDate(e.msg.timestamp)?.getTime()
     }]));
+
+    // Messages « nouveaux » : plus récents que mon marqueur de lecture à l'ouverture (ou reçus onglet masqué)
+    if (!chat.captured || !isActiveChatVisible()) {
+        const readAt = getGroupReadAt(chat.id) || 0;
+        entries.forEach((e) => {
+            if (e.msg.senderId !== me && tsMs(e.msg) > readAt) chat.newIds.add(e.doc.id);
+        });
+        chat.captured = true;
+    }
 
     const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 140;
     const prevScrollTop = container.scrollTop;
@@ -1731,24 +2009,42 @@ async function renderGroupMessages(snapshot) {
             mk("div", {}, mk("strong", { text: "Nouveau groupe" }), mk("p", { text: "Envoyez le premier message." }))
         ));
     } else {
+        const firstNew = entries.find((e) => chat.newIds.has(e.doc.id));
+        const newCount = entries.filter((e) => chat.newIds.has(e.doc.id)).length;
         let lastDay = "";
-        entries.forEach((e) => {
+        entries.forEach((e, i) => {
             const d = toDate(e.msg.timestamp) || new Date();
             const dayKey = d.toDateString();
             if (dayKey !== lastDay) {
                 frag.appendChild(mk("div", { class: "x-date-sep", text: formatDayLabel(d) }));
                 lastDay = dayKey;
             }
-            frag.appendChild(buildGroupMessageEl(e));
+            if (firstNew === e) {
+                frag.appendChild(mk("div", { class: "x-unread-divider", text: `${newCount} nouveau${newCount > 1 ? "x" : ""} message${newCount > 1 ? "s" : ""}` }));
+            }
+            frag.appendChild(buildGroupMessageEl(e, chat, decodedList[i]));
         });
     }
 
     container.textContent = "";
     container.appendChild(frag);
 
-    if (!chat.rendered || nearBottom) container.scrollTop = container.scrollHeight;
-    else container.scrollTop = prevScrollTop;
-    chat.rendered = true;
+    const lastEntry = entries[entries.length - 1];
+    const lastIsMine = !!lastEntry && lastEntry.msg.senderId === me;
+    const newTail = (lastEntry ? lastEntry.doc.id : null) !== chat.lastRenderedId;
+
+    if (!chat.rendered) {
+        const divider = container.querySelector(".x-unread-divider");
+        container.scrollTop = divider
+            ? divider.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 40
+            : container.scrollHeight;
+        chat.rendered = true;
+    } else if (nearBottom || (newTail && lastIsMine)) {
+        container.scrollTop = container.scrollHeight;
+    } else {
+        container.scrollTop = prevScrollTop;
+    }
+    chat.lastRenderedId = lastEntry ? lastEntry.doc.id : null;
 
     markActiveChatRead();
 }
@@ -1756,21 +2052,24 @@ async function renderGroupMessages(snapshot) {
 async function sendGroupMessage(rawText) {
     const chat = activeChat;
     if (!chat || !chat.isGroup) return;
-    const groupRef = db.collection("groups").doc(chat.id);
     const me = currentUser.uid;
 
     try {
-        await groupRef.collection("messages").add({
+        const groupKey = await getGroupKey(chat);
+        if (!groupKey) throw new Error("Clé de groupe indisponible sur cet appareil.");
+
+        const { iv, cipherText } = await E2EE.encryptGroupText(rawText, groupKey);
+
+        await db.collection("groups").doc(chat.id).collection("messages").add({
             senderId: me,
             senderName: myUsername,
-            text: rawText,
+            iv, cipherText,
             timestamp: FieldValue.serverTimestamp()
         });
-        const update = { lastSenderId: me, timestamp: FieldValue.serverTimestamp() };
-        (chat.members || []).forEach((uid) => { if (uid !== me) update[`unreadCount_${uid}`] = FieldValue.increment(1); });
-        await groupRef.set(update, { merge: true });
     } catch (err) {
         console.error("Erreur envoi message de groupe :", err);
+        const input = messageInputEl();
+        if (input && !input.value) input.value = rawText;
         showToast("Message non envoyé", "Vérifiez votre connexion et réessayez.");
     }
 }
@@ -1786,7 +2085,7 @@ function mountGroupFab() {
 }
 
 function openCreateGroupDialog() {
-    const contacts = Array.from(usersById.values()).filter((u) => u.uid !== currentUser.uid).sort((a, b) => displayNameOf(a).localeCompare(displayNameOf(b), "fr"));
+    const contacts = Array.from(usersById.values()).filter((u) => u.uid !== currentUser.uid).sort((a, b) => (a.username || "").localeCompare(b.username || "", "fr"));
     if (contacts.length === 0) {
         showToast("Aucun contact", "Il n'y a pas encore d'autre utilisateur à ajouter à un groupe.");
         return;
@@ -1798,12 +2097,11 @@ function openCreateGroupDialog() {
         contacts.map((u) => {
             const cb = mk("input", { type: "checkbox", value: u.uid });
             checkboxes.push(cb);
+            const memberName = u.username || u.userName || u.displayName || (u.email ? u.email.split("@")[0] : "Utilisateur");
+            const av = mk("div", { class: "avatar x-av" });
+            paintAvatar(av, memberName);
             return mk("div", { class: "x-member-row" },
-                mk("label", {},
-                    cb,
-                    (() => { const av = mk("div", { class: "avatar" }); paintUserAvatar(av, displayNameOf(u)); return av; })(),
-                    mk("span", { text: displayNameOf(u) })
-                )
+                mk("label", {}, cb, av, mk("span", { text: memberName }))
             );
         })
     );
@@ -1819,8 +2117,22 @@ function openCreateGroupDialog() {
 
         const members = Array.from(new Set([currentUser.uid, ...selected]));
         try {
+            if (typeof E2EE === "undefined" || !E2EE.generateGroupKey) {
+                throw new Error("Module de chiffrement indisponible.");
+            }
+            const groupKey = await E2EE.generateGroupKey();
+            const pubKeys = {};
+            await Promise.all(members.map(async (uid) => { pubKeys[uid] = await getPublicKey(uid); }));
+
+            const groupKeys = {};
+            for (const uid of members) {
+                if (!pubKeys[uid]) continue; // membre sans clé publique : sera ajouté plus tard si besoin
+                groupKeys[uid] = await E2EE.wrapGroupKeyForMember(groupKey, pubKeys[uid]);
+            }
+            if (!groupKeys[currentUser.uid]) throw new Error("Impossible de chiffrer la clé du groupe pour vous-même.");
+
             const doc = await db.collection("groups").add({
-                name, members, createdBy: currentUser.uid, createdAt: FieldValue.serverTimestamp()
+                name, members, createdBy: currentUser.uid, createdAt: FieldValue.serverTimestamp(), groupKeys
             });
             close();
             setTimeout(() => openGroupChat(doc.id), 150); // laisse le temps à l'écouteur de créer l'entrée
@@ -1834,6 +2146,8 @@ function openCreateGroupDialog() {
         mk("div", { class: "x-dialog", role: "dialog", "aria-modal": "true" },
             mk("h3", { text: "Nouveau groupe" }),
             mk("div", { class: "x-group-form" },
+                mk("div", { class: "x-group-hero" },
+                    mk("div", { class: "avatar x-av x-av-group x-av-xl" }, ico("fa-solid fa-users"))),
                 nameInput,
                 memberList
             ),
@@ -1860,6 +2174,99 @@ function showGroupMembers() {
         message: names.join("\n"),
         actions: [{ label: "Fermer", value: true, variant: "ghost" }]
     });
+}
+
+// ---------- Ajout de membres (réservé à l'administrateur = créateur du groupe) ----------
+function openAddMembersDialog() {
+    const chat = activeChat;
+    if (!chat || !chat.isGroup) return;
+    if (chat.createdBy !== currentUser.uid) {
+        showToast("Action réservée", "Seul l'administrateur du groupe peut ajouter des membres.");
+        return;
+    }
+
+    const current = new Set(chat.members || []);
+    const candidates = Array.from(usersById.values()).filter((u) => u.uid !== currentUser.uid && !current.has(u.uid))
+        .sort((a, b) => (a.username || "").localeCompare(b.username || "", "fr"));
+
+    if (candidates.length === 0) {
+        showToast("Aucun contact disponible", "Tous vos contacts sont déjà membres de ce groupe.");
+        return;
+    }
+
+    const checkboxes = [];
+    const memberList = mk("div", { class: "x-group-members" },
+        candidates.map((u) => {
+            const cb = mk("input", { type: "checkbox", value: u.uid });
+            checkboxes.push(cb);
+            const memberName = u.username || u.userName || u.displayName || (u.email ? u.email.split("@")[0] : "Utilisateur");
+            const av = mk("div", { class: "avatar x-av" });
+            paintAvatar(av, memberName);
+            return mk("div", { class: "x-member-row" }, mk("label", {}, cb, av, mk("span", { text: memberName })));
+        })
+    );
+
+    const close = () => { document.removeEventListener("keydown", onKey); backdrop.remove(); };
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+
+    const confirm = async () => {
+        const selected = checkboxes.filter((cb) => cb.checked).map((cb) => cb.value);
+        if (selected.length === 0) { showToast("Aucun membre sélectionné", "Cochez au moins un contact."); return; }
+        close();
+        await addMembersToGroup(chat.id, selected);
+    };
+
+    const backdrop = mk("div", { class: "x-backdrop", onclick: (e) => { if (e.target === backdrop) close(); } },
+        mk("div", { class: "x-dialog" },
+            mk("h3", { text: "Ajouter des membres" }),
+            mk("p", { text: `Ils verront les messages des ${GROUP_HISTORY_WINDOW_DAYS} derniers jours.` }),
+            memberList,
+            mk("div", { class: "x-dialog-actions" },
+                mk("button", { type: "button", class: "x-btn x-btn-primary", text: "Ajouter", onclick: confirm }),
+                mk("button", { type: "button", class: "x-btn x-btn-ghost", text: "Annuler", onclick: close })
+            )
+        )
+    );
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(backdrop);
+}
+
+async function addMembersToGroup(groupId, newUids) {
+    showToast("Ajout en cours…", "Merci de patienter, ne fermez pas l'application.");
+    try {
+        if (typeof E2EE === "undefined" || !E2EE.wrapGroupKeyForMember) {
+            throw new Error("Module de chiffrement indisponible.");
+        }
+        const groupKey = await getGroupKey(activeChat && activeChat.id === groupId ? activeChat : groupState.get(groupId));
+        if (!groupKey) throw new Error("Clé de groupe indisponible sur cet appareil.");
+
+        const newPubKeys = {};
+        await Promise.all(newUids.map(async (uid) => { newPubKeys[uid] = await getPublicKey(uid); }));
+        const readyUids = newUids.filter((uid) => !!newPubKeys[uid]);
+        if (readyUids.length === 0) throw new Error("Clé publique introuvable pour ces contacts.");
+
+        // Fenêtre d'historique : le nouveau membre voit à partir de « maintenant moins X jours »,
+        // jamais avant la création du groupe. Cette date est ensuite imposée par les règles Firestore,
+        // pas seulement par l'affichage : Firestore refusera de lui envoyer ce qui est plus ancien.
+        const cutoff = new Date(Date.now() - GROUP_HISTORY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+        const groupKeysUpdate = {};
+        const historyFromUpdate = {};
+        for (const uid of readyUids) {
+            groupKeysUpdate[`groupKeys.${uid}`] = await E2EE.wrapGroupKeyForMember(groupKey, newPubKeys[uid]);
+            historyFromUpdate[`historyFrom.${uid}`] = cutoff;
+        }
+
+        await db.collection("groups").doc(groupId).update({
+            ...groupKeysUpdate,
+            ...historyFromUpdate,
+            members: FieldValue.arrayUnion(...readyUids)
+        });
+
+        showToast("Membres ajoutés", `Ils voient désormais les ${GROUP_HISTORY_WINDOW_DAYS} derniers jours de discussion.`);
+    } catch (err) {
+        console.error("Erreur lors de l'ajout de membres :", err);
+        showToast("Ajout impossible", "Vérifiez votre connexion et réessayez.");
+    }
 }
 
 async function confirmLeaveGroup() {
@@ -1890,6 +2297,8 @@ async function confirmLeaveGroup() {
 // ============================================================================
 // 13. INTERFACE DE CHAT
 // ============================================================================
+const EMOJI_PICKER = ["\u{1F44D}", "\u{2764}", "\u{1F525}", "\u{1F602}", "\u{1F389}", "\u{1F60A}", "\u{1F64C}", "\u{1F44F}", "\u{1F4AF}", "\u{2728}", "\u{1F60D}", "\u{1F62D}", "\u{1F914}", "\u{1F44B}", "\u{1F64F}", "\u{1F60E}", "\u{1F622}", "\u{1F621}", "\u{1F631}", "\u{1F970}", "\u{1F605}", "\u{1F4AA}", "\u{1F440}", "\u{1F91D}"];
+
 function renderChatLayout() {
     const chatArea = qs(".chat-area");
     if (!chatArea) return;
@@ -1901,7 +2310,7 @@ function renderChatLayout() {
                 <i class="fa-solid fa-arrow-left"></i>
             </button>
             <div class="chat-user">
-                <div class="avatar"></div>
+                <div class="avatar x-av">--</div>
                 <div>
                     <h2>Chargement...</h2>
                     <p class="user-status-text"><span class="online-dot" id="statusDot"></span> <span id="statusLabel">Hors ligne</span></p>
@@ -1935,22 +2344,11 @@ function renderChatLayout() {
 
             <div id="stickerPicker" class="sticker-picker-popup">
                 <div class="sticker-header">
-                    <span><i class="fa-regular fa-face-smile"></i> Émojis</span>
-                    <button type="button" id="closeStickerPicker" title="Fermer" aria-label="Fermer"><i class="fa-solid fa-xmark"></i></button>
+                    <span>Emojis</span>
+                    <button type="button" id="closeStickerPicker">&times;</button>
                 </div>
                 <div class="sticker-grid">
-                    <span class="sticker-item">👍</span>
-                    <span class="sticker-item">❤️</span>
-                    <span class="sticker-item">🔥</span>
-                    <span class="sticker-item">😂</span>
-                    <span class="sticker-item">🚀</span>
-                    <span class="sticker-item">🎉</span>
-                    <span class="sticker-item">😊</span>
-                    <span class="sticker-item">🙌</span>
-                    <span class="sticker-item">👏</span>
-                    <span class="sticker-item">💡</span>
-                    <span class="sticker-item">💯</span>
-                    <span class="sticker-item">✨</span>
+                    ${EMOJI_PICKER.map((e) => `<span class="sticker-item" role="button">${e}</span>`).join("")}
                 </div>
             </div>
 
@@ -1989,10 +2387,11 @@ function renderChatLayout() {
             const r = btnOptions.getBoundingClientRect();
 
             if (activeChat && activeChat.isGroup) {
-                openMenu(r.right - 220, r.bottom + 6, [
-                    { label: "Voir les membres", icon: "fa-solid fa-users", action: showGroupMembers },
-                    { label: "Quitter le groupe", icon: "fa-solid fa-right-from-bracket", danger: true, action: confirmLeaveGroup }
-                ]);
+                const isAdmin = activeChat.createdBy === currentUser.uid;
+                const items = [{ label: "Voir les membres", icon: "fa-solid fa-users", action: showGroupMembers }];
+                if (isAdmin) items.push({ label: "Ajouter des membres", icon: "fa-solid fa-user-plus", action: openAddMembersDialog });
+                items.push({ label: "Quitter le groupe", icon: "fa-solid fa-right-from-bracket", danger: true, action: confirmLeaveGroup });
+                openMenu(r.right - 220, r.bottom + 6, items);
                 return;
             }
 
@@ -2097,7 +2496,7 @@ async function selectContact(targetUser) {
     const chatHeaderName = qs(".chat-user h2");
     if (chatHeaderName) chatHeaderName.textContent = targetUser.username || "Discussion";
     const chatHeaderAvatar = qs(".chat-user .avatar");
-    if (chatHeaderAvatar) paintUserAvatar(chatHeaderAvatar, displayNameOf(targetUser));
+    paintAvatar(chatHeaderAvatar, targetUser.username || "Discussion");
 
     updateComposerState();
 
@@ -2128,7 +2527,7 @@ async function selectContact(targetUser) {
 function encryptionNotice() {
     return mk("div", { class: "encryption-notice" },
         ico("fa-solid fa-shield-halved"),
-        mk("div", {}, mk("strong", { text: "Chiffrement E2EE activé" }), mk("p", { text: "Vos messages sont chiffrés de bout en bout et sauvegardés." }))
+        mk("div", {}, mk("strong", { text: "Chiffrement E2EE activé" }), mk("p", { text: "Discussion sécurisée avec sauvegarde dans le cloud." }))
     );
 }
 
@@ -2256,13 +2655,17 @@ function markActiveChatRead() {
     if (!chat || !currentUser || !isActiveChatVisible()) return;
     const me = currentUser.uid;
 
-    // Groupe : pas d'accusé de lecture par message, on réinitialise juste le compteur
+    // Groupe : pas d'accusé de lecture par message, on avance simplement le marqueur de lecture local
     if (chat.isGroup) {
         const gState = groupState.get(chat.id);
+        let newest = 0;
+        (chat.docs || []).forEach((d) => { newest = Math.max(newest, tsMs(d.data({ serverTimestamps: "estimate" }))); });
+        const current = getGroupReadAt(chat.id) || 0;
+        if (newest > current) setGroupReadAt(chat.id, newest);
         if (gState && gState.unread > 0) {
-            db.collection("groups").doc(chat.id)
-                .set({ [`unreadCount_${me}`]: 0 }, { merge: true })
-                .catch(console.error);
+            gState.unread = 0;
+            refreshGroupUI(gState);
+            updateTotalUnread();
         }
         return;
     }
@@ -2444,12 +2847,14 @@ async function submitEdit() {
 
     try {
         if (isGroup) {
-            await msgRef.update({ text: newText, edited: true, editedAt: FieldValue.serverTimestamp() });
+            const groupKey = await getGroupKey(activeChat);
+            if (!groupKey) throw new Error("Clé de groupe indisponible.");
+            const { iv, cipherText } = await E2EE.encryptGroupText(newText, groupKey);
+            await msgRef.update({ iv, cipherText, edited: true, editedAt: FieldValue.serverTimestamp() });
         } else {
-            const { textForReceiver, textForSender } = await encryptForBoth(newText, peer);
+            const { iv, cipherText, keys } = await encryptForBoth(newText, peer);
             await msgRef.update({
-                text: textForReceiver,
-                textForSender,
+                iv, cipherText, keys,
                 edited: true,
                 editedAt: FieldValue.serverTimestamp()
             });
@@ -2514,7 +2919,7 @@ async function sendMessage() {
     const chatDocRef = db.collection("chats").doc(getChatId(me, peer));
 
     try {
-        const { textForReceiver, textForSender } = await encryptForBoth(rawText, peer);
+        const { iv, cipherText, keys } = await encryptForBoth(rawText, peer);
 
         // S'il vous a bloqué, le message reste « envoyé » (✓) sans jamais être remis, sans le signaler
         const suppressed = blockedMe.has(peer);
@@ -2522,8 +2927,7 @@ async function sendMessage() {
         await chatDocRef.collection("messages").add({
             senderId: me,
             receiverId: peer,
-            text: textForReceiver,
-            textForSender,
+            iv, cipherText, keys,
             status: "sent",
             ...(suppressed ? { suppressed: true } : {}),
             timestamp: FieldValue.serverTimestamp()
@@ -2607,7 +3011,8 @@ async function renderDeviceQrCard() {
 
     try {
         await loadScriptAny("qrgen", QR_GEN_URLS);
-        new QRCode(box, { text: link, width: 200, height: 200, colorDark: "#0f172a", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+        const size = window.innerWidth < 380 ? 160 : 200;
+        new QRCode(box, { text: link, width: size, height: size, colorDark: "#0f172a", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
     } catch (e) {
         console.error(e);
         box.dataset.link = "";
@@ -2744,6 +3149,10 @@ async function openQrScanner() {
 // ============================================================================
 function initPeerJS(userId) {
     if (peer && !peer.destroyed) return;
+    if (typeof Peer === "undefined") {
+        console.warn("PeerJS n'est pas chargé : les appels sont désactivés.");
+        return;
+    }
 
     peer = new Peer(userId, {
         config: {
@@ -2789,7 +3198,7 @@ function showIncomingCallUI(callerName = "Un contact", isVideo = false) {
     const acceptBtn = document.getElementById("acceptCallBtn");
 
     if (callModal) callModal.style.display = "flex";
-    if (callStatus) callStatus.textContent = `${callerName} vous appelle (${isVideo ? "appel vidéo" : "appel vocal"})...`;
+    if (callStatus) callStatus.textContent = `${callerName} vous appelle (${isVideo ? "Vidéo" : "Vocal"})...`;
     if (acceptBtn) acceptBtn.style.display = "inline-block";
 }
 
@@ -2836,7 +3245,7 @@ async function startCall(targetUserId, isVideo = false) {
         window.currentCallDocId = callDoc.id;
 
         call.on("stream", (remoteStream) => {
-            if (callStatus) callStatus.textContent = "En communication";
+            if (callStatus) callStatus.textContent = "En communication...";
             if (isVideo) {
                 const remoteVideo = document.getElementById("remoteVideo");
                 if (remoteVideo) remoteVideo.srcObject = remoteStream;
@@ -2913,7 +3322,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const callStatus = document.getElementById("callStatus");
                 const videoContainer = document.getElementById("videoContainer");
 
-                if (callStatus) callStatus.textContent = "En communication";
+                if (callStatus) callStatus.textContent = "En communication...";
                 acceptCallBtn.style.display = "none";
 
                 incomingCall.answer(localStream);

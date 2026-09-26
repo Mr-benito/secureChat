@@ -14,6 +14,22 @@ service cloud.firestore {
       return signedIn() && request.auth.uid in chatId.split('_');
     }
 
+    // --- Groupes : accès basé sur une clé partagée (voir groupKeys), avec fenêtre d'historique ---
+    function groupDoc(groupId) {
+      return get(/databases/$(database)/documents/groups/$(groupId)).data;
+    }
+
+    function isGroupMember(groupId) {
+      return signedIn() && request.auth.uid in groupDoc(groupId).members;
+    }
+
+    // Un membre ajouté après coup n'a droit qu'aux messages postérieurs à sa date d'entrée
+    // (historyFrom) ; un membre fondateur (absent de historyFrom) voit tout l'historique.
+    function canSeeMessage(groupId, msgTimestamp) {
+      let hf = groupDoc(groupId).get('historyFrom', {});
+      return !(request.auth.uid in hf) || msgTimestamp >= hf[request.auth.uid];
+    }
+
     // Profils : lisibles par les comptes connectés, modifiables par leur propriétaire
     match /users/{uid} {
       allow read: if signedIn();
@@ -30,7 +46,7 @@ service cloud.firestore {
     match /blocks/{blockId} {
       allow read: if signedIn()
         && (resource.data.blockerId == request.auth.uid || resource.data.blockedId == request.auth.uid);
-      allow create: if signedIn()
+      allow create, update: if signedIn()
         && request.resource.data.blockerId == request.auth.uid
         && blockId == request.auth.uid + '_' + request.resource.data.blockedId;
       allow delete: if signedIn() && resource.data.blockerId == request.auth.uid;
@@ -57,7 +73,7 @@ service cloud.firestore {
           // L'expéditeur peut modifier le contenu ou le masquer pour lui
           (resource.data.senderId == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['text', 'textForSender', 'edited', 'editedAt', 'deletedFor']))
+                 .hasOnly(['iv', 'cipherText', 'keys', 'edited', 'editedAt', 'deletedFor']))
           ||
           // Le destinataire peut seulement changer le statut (reçu / vu) ou masquer pour lui
           (resource.data.receiverId == request.auth.uid
@@ -76,35 +92,35 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.auth.uid in request.resource.data.members
-        && request.resource.data.createdBy == request.auth.uid;
+        && request.resource.data.createdBy == request.auth.uid
+        && request.auth.uid in request.resource.data.groupKeys;
 
       allow update: if signedIn() && request.auth.uid in resource.data.members && (
-        // Modifier son propre compteur de non-lus, ou quitter le groupe soi-même
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unreadCount_' + request.auth.uid]))
-        ||
+        // Quitter le groupe soi-même
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
           && request.resource.data.members.size() == resource.data.members.size() - 1
           && !(request.auth.uid in request.resource.data.members))
         ||
-        // Le créateur peut renommer le groupe ou en gérer les membres
+        // Le créateur (administrateur) peut renommer le groupe, ajouter des membres,
+        // et leur distribuer la clé de groupe partagée + leur date d'entrée (historique borné)
         (resource.data.createdBy == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members']))
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['name', 'members', 'groupKeys', 'historyFrom']))
       );
 
       allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
 
       match /messages/{msgId} {
-        allow read: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+        allow read: if isGroupMember(groupId) && canSeeMessage(groupId, resource.data.timestamp);
 
-        allow create: if signedIn()
-          && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members
-          && request.resource.data.senderId == request.auth.uid;
+        allow create: if isGroupMember(groupId) && request.resource.data.senderId == request.auth.uid;
 
         allow update: if signedIn() && (
           (resource.data.senderId == request.auth.uid
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'edited', 'editedAt', 'deletedFor']))
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['cipherText', 'iv', 'edited', 'editedAt', 'deletedFor']))
           ||
-          (request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members
+          (isGroupMember(groupId)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedFor']))
         );
 
