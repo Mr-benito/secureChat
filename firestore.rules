@@ -33,7 +33,13 @@ service cloud.firestore {
     // Profils : lisibles par les comptes connectés, modifiables par leur propriétaire
     match /users/{uid} {
       allow read: if signedIn();
-      allow create, update: if signedIn() && request.auth.uid == uid;
+      // Le champ "badges" (ex: fondateur) ne peut JAMAIS être écrit par le client, quel que soit
+      // le compte — seule la console Firebase (ou l'Admin SDK, qui ignorent ces règles) peut
+      // le fixer. Ainsi personne ne peut se l'auto-attribuer via l'app, même en bidouillant.
+      allow create: if signedIn() && request.auth.uid == uid
+        && !('badges' in request.resource.data);
+      allow update: if signedIn() && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['badges']);
     }
 
     // Présence (en ligne / dernière connexion)

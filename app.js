@@ -323,6 +323,31 @@ html[data-theme="dark"] body .chat-actions button:hover, html[data-theme="dark"]
 html[data-theme="dark"] body .encryption-notice { background: #3b3417; color: #fde68a; }
 html[data-theme="dark"] body .message-form input[type="text"]:focus { background: #0f172a !important; }
 
+/* ---------- Badge « membre fondateur » — attribué uniquement depuis la console Firebase ---------- */
+body .avatar.x-av-founder {
+    position: relative;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px #d4af37;
+    background-image: none;
+}
+html[data-theme="dark"] body .avatar.x-av-founder { box-shadow: 0 0 0 2px #0b1220, 0 0 0 4px #d4af37; }
+body .x-founder-seal {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f5d67a, #d4af37 60%, #a8791f);
+    color: #3a2a00;
+    font-size: 9px;
+    box-shadow: 0 0 0 2px #fff;
+}
+html[data-theme="dark"] body .x-founder-seal { box-shadow: 0 0 0 2px #0b1220; }
+body .conversation .x-founder-seal, body .x-contact-card .x-founder-seal { width: 16px; height: 16px; font-size: 8px; }
+
 /* ---------- Message impossible à déchiffrer (groupe) ---------- */
 body .message.x-undecryptable p { font-style: italic; opacity: .75; }
 
@@ -490,12 +515,12 @@ function avatarColor(seed) {
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
     return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
-function paintAvatar(el, name, isGroup = false) {
+function paintAvatar(el, name, isGroup = false, isFounder = false) {
     if (!el) return;
-    const key = (isGroup ? "g:" : "u:") + (name || "");
+    const key = (isGroup ? "g:" : "u:") + (name || "") + (isFounder ? ":f" : "");
     if (el.dataset.paint === key) return;
     el.dataset.paint = key;
-    el.className = "avatar x-av" + (isGroup ? " x-av-group" : "");
+    el.className = "avatar x-av" + (isGroup ? " x-av-group" : "") + (isFounder ? " x-av-founder" : "");
     el.textContent = "";
     if (isGroup) {
         el.style.background = "";
@@ -505,6 +530,18 @@ function paintAvatar(el, name, isGroup = false) {
         el.style.background = avatarColor(name);
         el.textContent = initialsOf(name);
     }
+    if (isFounder) {
+        el.title = (el.title ? el.title + " — " : "") + "Membre fondateur";
+        el.appendChild(mk("span", { class: "x-founder-seal", "aria-hidden": "true" }, ico("fa-solid fa-stamp")));
+    }
+}
+
+// Un badge n'est JAMAIS auto-attribué : il vient uniquement du champ "badges" du document
+// users/{uid}, que seule la console Firebase peut modifier (les règles interdisent au client
+// de l'écrire lui-même, voir firestore.rules). isFounder() ne fait que lire ce que vous avez décidé.
+function isFounder(uid) {
+    const u = usersById.get(uid);
+    return !!(u && Array.isArray(u.badges) && u.badges.includes("founder"));
 }
 
 // ---------- Icônes du menu latéral : vraies icônes Font Awesome à la place d'éventuels emojis ----------
@@ -1336,7 +1373,7 @@ function addConversation(user) {
     const safeSearch = normalize(safeName);
 
     const avatarEl = mk("div", { class: "avatar x-av" });
-    paintAvatar(avatarEl, safeName);
+    paintAvatar(avatarEl, safeName, false, isFounder(user.uid));
     const nameEl = mk("h3", { text: safeName });
     const textEl = mk("p", { class: "last-msg-text", text: "Chargement..." });
     const timeEl = mk("span", { class: "last-msg-time" });
@@ -1469,7 +1506,7 @@ function refreshConvUI(s) {
     const rawName = s.user.username || s.user.userName || s.user.displayName || s.user.name || s.user.nom;
     const shownName = rawName || (s.user.email ? s.user.email.split("@")[0] : "Utilisateur");
     s.nameEl.textContent = shownName;
-    paintAvatar(s.avatarEl, shownName);
+    paintAvatar(s.avatarEl, shownName, false, isFounder(s.user.uid));
 
     s.nameEl.style.fontWeight = unread > 0 ? "800" : "600";
     s.textEl.style.fontWeight = unread > 0 ? "700" : "normal";
@@ -1568,7 +1605,7 @@ function updateUserEntry(user) {
         const safeName = user.username || user.userName || user.displayName || user.name || (user.email ? user.email.split("@")[0] : "Utilisateur");
         
         if (card.nameEl) card.nameEl.textContent = safeName;
-        paintAvatar(card.avatarEl, safeName);
+        paintAvatar(card.avatarEl, safeName, false, isFounder(user.uid));
         if (card.subEl) card.subEl.textContent = user.email || "";
         if (card.el && typeof normalize === "function") {
             card.el.dataset.search = normalize(safeName);
@@ -1594,7 +1631,7 @@ function addContactCard(user) {
     const safeName = user.username || user.userName || user.displayName || user.name || (user.email ? user.email.split("@")[0] : "Utilisateur");
 
     const avatarEl = mk("div", { class: "avatar x-av" });
-    paintAvatar(avatarEl, safeName);
+    paintAvatar(avatarEl, safeName, false, isFounder(user.uid));
     const nameEl = mk("h4", { class: "x-contact-name", text: safeName });
     const subEl = mk("span", { class: "x-contact-sub", text: user.email || "" });
 
@@ -2099,7 +2136,7 @@ function openCreateGroupDialog() {
             checkboxes.push(cb);
             const memberName = u.username || u.userName || u.displayName || (u.email ? u.email.split("@")[0] : "Utilisateur");
             const av = mk("div", { class: "avatar x-av" });
-            paintAvatar(av, memberName);
+            paintAvatar(av, memberName, false, isFounder(u.uid));
             return mk("div", { class: "x-member-row" },
                 mk("label", {}, cb, av, mk("span", { text: memberName }))
             );
@@ -2201,7 +2238,7 @@ function openAddMembersDialog() {
             checkboxes.push(cb);
             const memberName = u.username || u.userName || u.displayName || (u.email ? u.email.split("@")[0] : "Utilisateur");
             const av = mk("div", { class: "avatar x-av" });
-            paintAvatar(av, memberName);
+            paintAvatar(av, memberName, false, isFounder(u.uid));
             return mk("div", { class: "x-member-row" }, mk("label", {}, cb, av, mk("span", { text: memberName })));
         })
     );
@@ -2496,7 +2533,7 @@ async function selectContact(targetUser) {
     const chatHeaderName = qs(".chat-user h2");
     if (chatHeaderName) chatHeaderName.textContent = targetUser.username || "Discussion";
     const chatHeaderAvatar = qs(".chat-user .avatar");
-    paintAvatar(chatHeaderAvatar, targetUser.username || "Discussion");
+    paintAvatar(chatHeaderAvatar, targetUser.username || "Discussion", false, isFounder(targetUser.uid));
 
     updateComposerState();
 
