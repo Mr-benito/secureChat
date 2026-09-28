@@ -331,17 +331,17 @@ html[data-theme="dark"] body .message-form input[type="text"]:focus { background
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    width: 18px;
-    height: 18px;
+    width: 15px;
+    height: 15px;
     border-radius: 50%;
     cursor: default;
 }
-.x-badge svg { width: 13px; height: 13px; display: block; }
+.x-badge svg { width: 10px; height: 10px; display: block; }
 .x-badge-bronze { background: #b5713f; color: #ffffff; }
 .x-badge-silver { background: #a4b0c2; color: #12203f; }
 .x-badge-gold   { background: #d9a828; color: #3a2a00; }
-body .chat-user h2 .x-badge { width: 20px; height: 20px; }
-body .chat-user h2 .x-badge svg { width: 14px; height: 14px; }
+body .chat-user h2 .x-badge { width: 17px; height: 17px; }
+body .chat-user h2 .x-badge svg { width: 11px; height: 11px; }
 
 /* ---------- Message impossible à déchiffrer (groupe) ---------- */
 body .message.x-undecryptable p { font-style: italic; opacity: .75; }
