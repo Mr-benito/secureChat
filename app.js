@@ -323,30 +323,25 @@ html[data-theme="dark"] body .chat-actions button:hover, html[data-theme="dark"]
 html[data-theme="dark"] body .encryption-notice { background: #3b3417; color: #fde68a; }
 html[data-theme="dark"] body .message-form input[type="text"]:focus { background: #0f172a !important; }
 
-/* ---------- Badge « membre fondateur » — attribué uniquement depuis la console Firebase ---------- */
-body .avatar.x-av-founder {
-    position: relative;
-    box-shadow: 0 0 0 2px #fff, 0 0 0 4px #d4af37;
-    background-image: none;
-}
-html[data-theme="dark"] body .avatar.x-av-founder { box-shadow: 0 0 0 2px #0b1220, 0 0 0 4px #d4af37; }
-body .x-founder-seal {
-    position: absolute;
-    right: -3px;
-    bottom: -3px;
-    width: 18px;
-    height: 18px;
-    display: flex;
+/* ---------- Badges d'abonnement (bronze / silver / gold) — attribués uniquement depuis la console Firebase ---------- */
+.x-name-line { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
+.x-name-line > .x-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.x-badge {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #f5d67a, #d4af37 60%, #a8791f);
-    color: #3a2a00;
-    font-size: 9px;
-    box-shadow: 0 0 0 2px #fff;
+    cursor: default;
 }
-html[data-theme="dark"] body .x-founder-seal { box-shadow: 0 0 0 2px #0b1220; }
-body .conversation .x-founder-seal, body .x-contact-card .x-founder-seal { width: 16px; height: 16px; font-size: 8px; }
+.x-badge svg { width: 13px; height: 13px; display: block; }
+.x-badge-bronze { background: #b5713f; color: #ffffff; }
+.x-badge-silver { background: #a4b0c2; color: #12203f; }
+.x-badge-gold   { background: #d9a828; color: #3a2a00; }
+body .chat-user h2 .x-badge { width: 20px; height: 20px; }
+body .chat-user h2 .x-badge svg { width: 14px; height: 14px; }
 
 /* ---------- Message impossible à déchiffrer (groupe) ---------- */
 body .message.x-undecryptable p { font-style: italic; opacity: .75; }
@@ -515,12 +510,12 @@ function avatarColor(seed) {
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
     return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
-function paintAvatar(el, name, isGroup = false, isFounder = false) {
+function paintAvatar(el, name, isGroup = false) {
     if (!el) return;
-    const key = (isGroup ? "g:" : "u:") + (name || "") + (isFounder ? ":f" : "");
+    const key = (isGroup ? "g:" : "u:") + (name || "");
     if (el.dataset.paint === key) return;
     el.dataset.paint = key;
-    el.className = "avatar x-av" + (isGroup ? " x-av-group" : "") + (isFounder ? " x-av-founder" : "");
+    el.className = "avatar x-av" + (isGroup ? " x-av-group" : "");
     el.textContent = "";
     if (isGroup) {
         el.style.background = "";
@@ -530,19 +525,51 @@ function paintAvatar(el, name, isGroup = false, isFounder = false) {
         el.style.background = avatarColor(name);
         el.textContent = initialsOf(name);
     }
-    if (isFounder) {
-        el.title = (el.title ? el.title + " — " : "") + "Membre fondateur";
-        el.appendChild(mk("span", { class: "x-founder-seal", "aria-hidden": "true" }, ico("fa-solid fa-stamp")));
-    }
 }
 
 // Un badge n'est JAMAIS auto-attribué : il vient uniquement du champ "badges" du document
 // users/{uid}, que seule la console Firebase peut modifier (les règles interdisent au client
-// de l'écrire lui-même, voir firestore.rules). isFounder() ne fait que lire ce que vous avez décidé.
-function isFounder(uid) {
+// de l'écrire lui-même, voir firestore.rules). Valeurs reconnues : "bronze", "silver", "gold".
+const BADGE_TIERS = ["gold", "silver", "bronze"]; // du plus prestigieux au moins prestigieux
+const BADGE_LABELS = { bronze: "Niveau bronze", silver: "Niveau silver", gold: "Niveau gold" };
+
+function getBadgeTier(uid) {
     const u = usersById.get(uid);
-    return !!(u && Array.isArray(u.badges) && u.badges.includes("founder"));
+    if (!u || !Array.isArray(u.badges)) return null;
+    return BADGE_TIERS.find((t) => u.badges.includes(t)) || null;
 }
+
+// Petit cercle coloré contenant un motif en étoile à quatre branches, affiché APRÈS le nom.
+function badgeNode(tier) {
+    if (!tier) return null;
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(svgNS, "path");
+    path.setAttribute("d", "M12 1 L15 9 L23 12 L15 15 L12 23 L9 15 L1 12 L9 9 Z");
+    path.setAttribute("fill", "currentColor");
+    svg.appendChild(path);
+    const badge = mk("span", { class: `x-badge x-badge-${tier}`, title: BADGE_LABELS[tier], role: "img", "aria-label": BADGE_LABELS[tier] });
+    badge.appendChild(svg);
+    return badge;
+}
+
+// Remplace le contenu d'un élément de titre par « nom + badge » (à utiliser à la place de textContent).
+function setNameWithBadge(el, name, uid) {
+    if (!el) return;
+    el.textContent = "";
+    el.appendChild(nameWithBadge(name, uid));
+}
+
+// Nom + badge éventuel, dans un même conteneur (le nom se tronque, le badge reste toujours visible).
+function nameWithBadge(name, uid) {
+    const badge = badgeNode(getBadgeTier(uid));
+    const line = mk("span", { class: "x-name-line" }, mk("span", { class: "x-name-text", text: name }));
+    if (badge) line.appendChild(badge);
+    return line;
+}
+
 
 // ---------- Icônes du menu latéral : vraies icônes Font Awesome à la place d'éventuels emojis ----------
 const MENU_ICONS = {
@@ -1373,8 +1400,9 @@ function addConversation(user) {
     const safeSearch = normalize(safeName);
 
     const avatarEl = mk("div", { class: "avatar x-av" });
-    paintAvatar(avatarEl, safeName, false, isFounder(user.uid));
-    const nameEl = mk("h3", { text: safeName });
+    paintAvatar(avatarEl, safeName);
+    const nameEl = mk("h3");
+    setNameWithBadge(nameEl, safeName, user.uid);
     const textEl = mk("p", { class: "last-msg-text", text: "Chargement..." });
     const timeEl = mk("span", { class: "last-msg-time" });
     const badgeEl = mk("span", { class: "unread", style: "display: none;", text: "0" });
@@ -1505,8 +1533,12 @@ function refreshConvUI(s) {
     // NOM D'UTILISATEUR SÉCURISÉ :
     const rawName = s.user.username || s.user.userName || s.user.displayName || s.user.name || s.user.nom;
     const shownName = rawName || (s.user.email ? s.user.email.split("@")[0] : "Utilisateur");
-    s.nameEl.textContent = shownName;
-    paintAvatar(s.avatarEl, shownName, false, isFounder(s.user.uid));
+    const tierNow = getBadgeTier(s.user.uid) || "";
+    if (s.nameEl.dataset.rendered !== shownName + "|" + tierNow) {
+        s.nameEl.dataset.rendered = shownName + "|" + tierNow;
+        setNameWithBadge(s.nameEl, shownName, s.user.uid);
+    }
+    paintAvatar(s.avatarEl, shownName);
 
     s.nameEl.style.fontWeight = unread > 0 ? "800" : "600";
     s.textEl.style.fontWeight = unread > 0 ? "700" : "normal";
@@ -1604,12 +1636,19 @@ function updateUserEntry(user) {
         const card = contactCards.get(user.uid);
         const safeName = user.username || user.userName || user.displayName || user.name || (user.email ? user.email.split("@")[0] : "Utilisateur");
         
-        if (card.nameEl) card.nameEl.textContent = safeName;
-        paintAvatar(card.avatarEl, safeName, false, isFounder(user.uid));
+        if (card.nameEl) setNameWithBadge(card.nameEl, safeName, user.uid);
+        paintAvatar(card.avatarEl, safeName);
         if (card.subEl) card.subEl.textContent = user.email || "";
         if (card.el && typeof normalize === "function") {
             card.el.dataset.search = normalize(safeName);
         }
+    }
+
+    // 3. En-tête de la discussion ouverte avec cette personne (badge attribué en direct, par ex.)
+    if (activeChat && !activeChat.isGroup && activeChat.uid === user.uid) {
+        const h2 = qs(".chat-user h2");
+        const name = user.username || user.userName || user.displayName || user.name || (user.email ? user.email.split("@")[0] : "Utilisateur");
+        if (h2) setNameWithBadge(h2, name, user.uid);
     }
 }
 
@@ -1631,8 +1670,9 @@ function addContactCard(user) {
     const safeName = user.username || user.userName || user.displayName || user.name || (user.email ? user.email.split("@")[0] : "Utilisateur");
 
     const avatarEl = mk("div", { class: "avatar x-av" });
-    paintAvatar(avatarEl, safeName, false, isFounder(user.uid));
-    const nameEl = mk("h4", { class: "x-contact-name", text: safeName });
+    paintAvatar(avatarEl, safeName);
+    const nameEl = mk("h4", { class: "x-contact-name" });
+    setNameWithBadge(nameEl, safeName, user.uid);
     const subEl = mk("span", { class: "x-contact-sub", text: user.email || "" });
 
     const el = mk("div", { class: "x-contact-card", dataset: { uid: user.uid, search: normalize(safeName) } },
@@ -2136,9 +2176,9 @@ function openCreateGroupDialog() {
             checkboxes.push(cb);
             const memberName = u.username || u.userName || u.displayName || (u.email ? u.email.split("@")[0] : "Utilisateur");
             const av = mk("div", { class: "avatar x-av" });
-            paintAvatar(av, memberName, false, isFounder(u.uid));
+            paintAvatar(av, memberName);
             return mk("div", { class: "x-member-row" },
-                mk("label", {}, cb, av, mk("span", { text: memberName }))
+                mk("label", {}, cb, av, nameWithBadge(memberName, u.uid))
             );
         })
     );
@@ -2238,8 +2278,8 @@ function openAddMembersDialog() {
             checkboxes.push(cb);
             const memberName = u.username || u.userName || u.displayName || (u.email ? u.email.split("@")[0] : "Utilisateur");
             const av = mk("div", { class: "avatar x-av" });
-            paintAvatar(av, memberName, false, isFounder(u.uid));
-            return mk("div", { class: "x-member-row" }, mk("label", {}, cb, av, mk("span", { text: memberName })));
+            paintAvatar(av, memberName);
+            return mk("div", { class: "x-member-row" }, mk("label", {}, cb, av, nameWithBadge(memberName, u.uid)));
         })
     );
 
@@ -2531,9 +2571,9 @@ async function selectContact(targetUser) {
     updateTotalUnread();
 
     const chatHeaderName = qs(".chat-user h2");
-    if (chatHeaderName) chatHeaderName.textContent = targetUser.username || "Discussion";
+    if (chatHeaderName) setNameWithBadge(chatHeaderName, targetUser.username || "Discussion", targetUser.uid);
     const chatHeaderAvatar = qs(".chat-user .avatar");
-    paintAvatar(chatHeaderAvatar, targetUser.username || "Discussion", false, isFounder(targetUser.uid));
+    paintAvatar(chatHeaderAvatar, targetUser.username || "Discussion");
 
     updateComposerState();
 
