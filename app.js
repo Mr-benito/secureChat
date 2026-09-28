@@ -541,7 +541,7 @@ function getBadgeTier(uid) {
 // Rosette à 12 pics (couleur du niveau) contenant une étoile épaisse à quatre branches (affichée APRÈS le nom).
 // L'étoile est volontairement large et à branches évasées pour ne pas se lire comme un « + ».
 const BADGE_RING_PATH = "M12.00,0.40 L14.48,2.73 L17.80,1.95 L18.79,5.21 L22.05,6.20 L21.27,9.52 L23.60,12.00 L21.27,14.48 L22.05,17.80 L18.79,18.79 L17.80,22.05 L14.48,21.27 L12.00,23.60 L9.52,21.27 L6.20,22.05 L5.21,18.79 L1.95,17.80 L2.73,14.48 L0.40,12.00 L2.73,9.52 L1.95,6.20 L5.21,5.21 L6.20,1.95 L9.52,2.73 Z";
-const BADGE_STAR_PATH = "M12.00 4.10 L15.04 8.96 L19.90 12.00 L15.04 15.04 L12.00 19.90 L8.96 15.04 L4.10 12.00 L8.96 8.96 Z";
+const BADGE_STAR_PATH = "M12.00 5.50 L14.55 9.45 L18.50 12.00 L14.55 14.55 L12.00 18.50 L9.45 14.55 L5.50 12.00 L9.45 9.45 Z";
 
 function badgeNode(tier) {
     if (!tier) return null;
