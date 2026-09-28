@@ -331,17 +331,16 @@ html[data-theme="dark"] body .message-form input[type="text"]:focus { background
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
+    width: 17px;
+    height: 17px;
     cursor: default;
 }
-.x-badge svg { width: 10px; height: 10px; display: block; }
-.x-badge-bronze { background: #b5713f; color: #ffffff; }
-.x-badge-silver { background: #a4b0c2; color: #12203f; }
-.x-badge-gold   { background: #d9a828; color: #3a2a00; }
-body .chat-user h2 .x-badge { width: 17px; height: 17px; }
-body .chat-user h2 .x-badge svg { width: 11px; height: 11px; }
+.x-badge svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.x-badge .x-badge-shape { fill: var(--badge-bg); stroke: var(--badge-bg); stroke-width: 1.2; stroke-linejoin: round; }
+.x-badge-bronze { --badge-bg: #b5713f; color: #ffffff; }
+.x-badge-silver { --badge-bg: #a4b0c2; color: #12203f; }
+.x-badge-gold   { --badge-bg: #d9a828; color: #3a2a00; }
+body .chat-user h2 .x-badge { width: 19px; height: 19px; }
 
 /* ---------- Message impossible à déchiffrer (groupe) ---------- */
 body .message.x-undecryptable p { font-style: italic; opacity: .75; }
@@ -539,17 +538,29 @@ function getBadgeTier(uid) {
     return BADGE_TIERS.find((t) => u.badges.includes(t)) || null;
 }
 
-// Petit cercle coloré contenant un motif en étoile à quatre branches, affiché APRÈS le nom.
+// Rosette à 12 pics (couleur du niveau) contenant une étoile épaisse à quatre branches (affichée APRÈS le nom).
+// L'étoile est volontairement large et à branches évasées pour ne pas se lire comme un « + ».
+const BADGE_RING_PATH = "M12.00,0.40 L14.48,2.73 L17.80,1.95 L18.79,5.21 L22.05,6.20 L21.27,9.52 L23.60,12.00 L21.27,14.48 L22.05,17.80 L18.79,18.79 L17.80,22.05 L14.48,21.27 L12.00,23.60 L9.52,21.27 L6.20,22.05 L5.21,18.79 L1.95,17.80 L2.73,14.48 L0.40,12.00 L2.73,9.52 L1.95,6.20 L5.21,5.21 L6.20,1.95 L9.52,2.73 Z";
+const BADGE_STAR_PATH = "M12.00 4.10 L15.04 8.96 L19.90 12.00 L15.04 15.04 L12.00 19.90 L8.96 15.04 L4.10 12.00 L8.96 8.96 Z";
+
 function badgeNode(tier) {
     if (!tier) return null;
     const svgNS = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgNS, "svg");
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("aria-hidden", "true");
-    const path = document.createElementNS(svgNS, "path");
-    path.setAttribute("d", "M12 1 L15 9 L23 12 L15 15 L12 23 L9 15 L1 12 L9 9 Z");
-    path.setAttribute("fill", "currentColor");
-    svg.appendChild(path);
+
+    const ring = document.createElementNS(svgNS, "path");
+    ring.setAttribute("d", BADGE_RING_PATH);
+    ring.setAttribute("class", "x-badge-shape");
+
+    const star = document.createElementNS(svgNS, "path");
+    star.setAttribute("d", BADGE_STAR_PATH);
+    star.setAttribute("fill", "currentColor");
+
+    svg.appendChild(ring);
+    svg.appendChild(star);
+
     const badge = mk("span", { class: `x-badge x-badge-${tier}`, title: BADGE_LABELS[tier], role: "img", "aria-label": BADGE_LABELS[tier] });
     badge.appendChild(svg);
     return badge;
