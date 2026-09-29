@@ -336,10 +336,11 @@ html[data-theme="dark"] body .message-form input[type="text"]:focus { background
     cursor: default;
 }
 .x-badge svg { width: 100%; height: 100%; display: block; overflow: visible; }
-.x-badge .x-badge-shape { fill: var(--badge-bg); stroke: var(--badge-bg); stroke-width: 1.2; stroke-linejoin: round; }
-.x-badge-bronze { --badge-bg: #b5713f; color: #ffffff; }
-.x-badge-silver { --badge-bg: #a4b0c2; color: #12203f; }
-.x-badge-gold   { --badge-bg: #d9a828; color: #3a2a00; }
+.x-badge .x-badge-shape { fill: var(--badge-bg); stroke: var(--badge-border); stroke-width: 1; stroke-linejoin: round; }
+.x-badge .x-badge-star { stroke: var(--badge-bg); stroke-width: 0.6; stroke-linejoin: round; }
+.x-badge-bronze { --badge-bg: #b5713f; --badge-border: #7c4a24; color: #ffffff; }
+.x-badge-silver { --badge-bg: #a4b0c2; --badge-border: #6c7890; color: #12203f; }
+.x-badge-gold   { --badge-bg: #d9a828; --badge-border: #a2760f; color: #3a2a00; }
 body .chat-user h2 .x-badge { width: 19px; height: 19px; }
 
 /* ---------- Message impossible à déchiffrer (groupe) ---------- */
@@ -557,6 +558,7 @@ function badgeNode(tier) {
     const star = document.createElementNS(svgNS, "path");
     star.setAttribute("d", BADGE_STAR_PATH);
     star.setAttribute("fill", "currentColor");
+    star.setAttribute("class", "x-badge-star");
 
     svg.appendChild(ring);
     svg.appendChild(star);
