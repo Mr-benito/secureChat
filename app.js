@@ -337,10 +337,10 @@ html[data-theme="dark"] body .message-form input[type="text"]:focus { background
 }
 .x-badge svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .x-badge .x-badge-shape { fill: var(--badge-bg); stroke: var(--badge-border); stroke-width: 1; stroke-linejoin: round; }
-.x-badge .x-badge-star { stroke: var(--badge-bg); stroke-width: 0.6; stroke-linejoin: round; }
-.x-badge-bronze { --badge-bg: #b5713f; --badge-border: #7c4a24; color: #ffffff; }
-.x-badge-silver { --badge-bg: #a4b0c2; --badge-border: #6c7890; color: #12203f; }
-.x-badge-gold   { --badge-bg: #d9a828; --badge-border: #a2760f; color: #3a2a00; }
+.x-badge .x-badge-star { fill: #fff8ec; }
+.x-badge-bronze { --badge-bg: #b5713f; --badge-border: #e3ad78; }
+.x-badge-silver { --badge-bg: #a4b0c2; --badge-border: #e7edf6; }
+.x-badge-gold   { --badge-bg: #d9a828; --badge-border: #ffe17a; }
 body .chat-user h2 .x-badge { width: 19px; height: 19px; }
 
 /* ---------- Message impossible à déchiffrer (groupe) ---------- */
@@ -542,7 +542,9 @@ function getBadgeTier(uid) {
 // Rosette à 12 pics (couleur du niveau) contenant une étoile épaisse à quatre branches (affichée APRÈS le nom).
 // L'étoile est volontairement large et à branches évasées pour ne pas se lire comme un « + ».
 const BADGE_RING_PATH = "M12.00,0.40 L14.48,2.73 L17.80,1.95 L18.79,5.21 L22.05,6.20 L21.27,9.52 L23.60,12.00 L21.27,14.48 L22.05,17.80 L18.79,18.79 L17.80,22.05 L14.48,21.27 L12.00,23.60 L9.52,21.27 L6.20,22.05 L5.21,18.79 L1.95,17.80 L2.73,14.48 L0.40,12.00 L2.73,9.52 L1.95,6.20 L5.21,5.21 L6.20,1.95 L9.52,2.73 Z";
-const BADGE_STAR_PATH = "M12.00 5.50 L14.55 9.45 L18.50 12.00 L14.55 14.55 L12.00 18.50 L9.45 14.55 L5.50 12.00 L9.45 9.45 Z";
+// Étincelle à 4 pointes, côtés concaves (courbes), pas un polygone droit -> ne ressemble jamais à un « + »
+const BADGE_STAR_PATH = "M12 2.5 C12.5 7.3 13.2 8.6 14 9.4 C14.8 10.2 16.5 10.9 21.2 12 C16.5 13.1 14.8 13.8 14 14.6 C13.2 15.4 12.5 16.7 12 21.5 C11.5 16.7 10.8 15.4 10 14.6 C9.2 13.8 7.5 13.1 2.8 12 C7.5 10.9 9.2 10.2 10 9.4 C10.8 8.6 11.5 7.3 12 2.5 Z";
+let badgeFilterSeq = 0;
 
 function badgeNode(tier) {
     if (!tier) return null;
@@ -551,16 +553,34 @@ function badgeNode(tier) {
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("aria-hidden", "true");
 
+    const filterId = `x-badge-glow-${++badgeFilterSeq}`;
+    const defs = document.createElementNS(svgNS, "defs");
+    const filter = document.createElementNS(svgNS, "filter");
+    filter.setAttribute("id", filterId);
+    filter.setAttribute("x", "-60%"); filter.setAttribute("y", "-60%");
+    filter.setAttribute("width", "220%"); filter.setAttribute("height", "220%");
+    const blur = document.createElementNS(svgNS, "feGaussianBlur");
+    blur.setAttribute("stdDeviation", "1.1");
+    filter.appendChild(blur);
+    defs.appendChild(filter);
+
     const ring = document.createElementNS(svgNS, "path");
     ring.setAttribute("d", BADGE_RING_PATH);
     ring.setAttribute("class", "x-badge-shape");
 
+    const glow = document.createElementNS(svgNS, "path");
+    glow.setAttribute("d", BADGE_STAR_PATH);
+    glow.setAttribute("class", "x-badge-star");
+    glow.setAttribute("filter", `url(#${filterId})`);
+    glow.setAttribute("opacity", "0.8");
+
     const star = document.createElementNS(svgNS, "path");
     star.setAttribute("d", BADGE_STAR_PATH);
-    star.setAttribute("fill", "currentColor");
     star.setAttribute("class", "x-badge-star");
 
+    svg.appendChild(defs);
     svg.appendChild(ring);
+    svg.appendChild(glow);
     svg.appendChild(star);
 
     const badge = mk("span", { class: `x-badge x-badge-${tier}`, title: BADGE_LABELS[tier], role: "img", "aria-label": BADGE_LABELS[tier] });
