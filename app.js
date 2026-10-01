@@ -134,7 +134,10 @@ html[data-theme="dark"] .conversation-list,
 html[data-theme="dark"] .chat-header,
 html[data-theme="dark"] .message-form,
 html[data-theme="dark"] .search-bar,
+html[data-theme="dark"] .search-box,
 html[data-theme="dark"] .sidebar-profile { background-color: #111827 !important; border-color: #1e293b !important; }
+html[data-theme="dark"] .search-box input { color: #e2e8f0 !important; }
+html[data-theme="dark"] .search-box input::placeholder { color: #64748b !important; }
 html[data-theme="dark"] .conversation,
 html[data-theme="dark"] #contacts-list > div,
 html[data-theme="dark"] .x-dialog,
@@ -274,7 +277,12 @@ body .conversation .unread { box-sizing: border-box; align-items: center; justif
 .x-contact-card:hover { box-shadow: 0 4px 14px rgba(15,23,42,.07); }
 .x-contact-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .x-contact-text { display: flex; flex-direction: column; min-width: 0; }
-.x-contact-name { margin: 0; font-size: 15px; font-weight: 600; color: #0f172a; }
+.x-contact-name { margin: 0; font-size: 15px; font-weight: 600; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Filet de sécurité : qu'un texte non tronqué quelque part ne pousse plus jamais un bouton hors de l'écran */
+body { overflow-x: hidden; }
+@media (max-width: 380px) {
+    .x-contact-btn { padding: 8px 10px; font-size: 12px; }
+}
 .x-contact-sub { font-size: 12.5px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .x-contact-btn { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 8px 14px; border: 0; border-radius: 999px; background: var(--x-accent); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: filter .15s ease; }
 .x-contact-btn:hover { filter: brightness(1.1); }
@@ -315,6 +323,11 @@ body .sticker-item { cursor: pointer; }
 html[data-theme="dark"] body .conversation:hover { background-color: #273449 !important; }
 html[data-theme="dark"] body .conversation.active-conversation { background-color: #1e3a8a55 !important; }
 html[data-theme="dark"] body .conversation-info h3, html[data-theme="dark"] body .x-contact-name { color: #f1f5f9; }
+/* Les titres "Vos Contacts", "Appareils & Sécurité", "Paramètres" ont une couleur sombre écrite en
+   dur dans le HTML (pensée pour un fond clair) : sans ceci, ils deviennent invisibles en mode sombre. */
+html[data-theme="dark"] #tab-contacts h2,
+html[data-theme="dark"] #tab-devices h2,
+html[data-theme="dark"] #tab-settings h2 { color: #f1f5f9 !important; }
 html[data-theme="dark"] body .conversation-info p, html[data-theme="dark"] body .x-contact-sub, html[data-theme="dark"] body .last-msg-time { color: #94a3b8; }
 html[data-theme="dark"] .x-contact-card { background: #1e293b !important; border-color: #334155 !important; }
 html[data-theme="dark"] body .chat-area .messages { background: #0b1220 !important; }
@@ -626,6 +639,20 @@ function upgradeMenuIcons() {
         texts.forEach((t) => { t.nodeValue = t.nodeValue.replace(EMOJI_RE, ""); });
         qsa("span, div", item).forEach((n) => { if (!n.children.length && !n.textContent.trim() && !n.querySelector("i")) n.remove(); });
         item.insertBefore(ico(cls), item.firstChild);
+    });
+}
+
+// Les titres d'onglets (Contacts, Appareils, Paramètres) ont déjà une vraie icône Font Awesome au
+// début : on retire juste l'emoji redondant qui traînait à la fin du texte, sans toucher au reste.
+let headerEmojisStripped = false;
+function stripHeaderEmojis() {
+    if (headerEmojisStripped) return;
+    headerEmojisStripped = true;
+    qsa("#tab-contacts h2, #tab-devices h2, #tab-settings h2").forEach((h2) => {
+        const walker = document.createTreeWalker(h2, NodeFilter.SHOW_TEXT);
+        const texts = [];
+        while (walker.nextNode()) texts.push(walker.currentNode);
+        texts.forEach((t) => { t.nodeValue = t.nodeValue.replace(EMOJI_RE, "").replace(/[ \t]+$/, ""); });
     });
 }
 
@@ -1162,6 +1189,7 @@ function loadUserProfile(user) {
 // ============================================================================
 function setupTabNavigation() {
     upgradeMenuIcons();
+    stripHeaderEmojis();
     const menuItems = qsa(".sidebar-menu .menu-item");
 
     menuItems.forEach((item) => {
@@ -1201,7 +1229,7 @@ function setupTabNavigation() {
 
 // RECHERCHE PAR NOM D'UTILISATEUR (insensible à la casse et aux accents, « @ » accepté)
 function setupSearch() {
-    qsa(".search-bar input, #searchInput").forEach((input) => {
+    qsa(".search-box input, .search-bar input, #searchInput").forEach((input) => {
         if (input.dataset.searchBound) return;
         input.dataset.searchBound = "1";
 
