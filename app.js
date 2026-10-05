@@ -284,6 +284,26 @@ body { overflow-x: hidden; }
    invisible basée sur son contenu (comme min-width:auto en flexbox). Si un bouton à l'intérieur
    refuse de rétrécir, c'est toute la colonne de la grille qui s'élargit au-delà de l'écran. */
 .dashboard > * { min-width: 0; }
+
+/* LA VRAIE CAUSE du débordement persistant : « .dashboard.tab-active » impose une colonne de
+   245px pour la barre latérale (pensée pour le bureau), sans jamais être limitée au bureau.
+   Sur mobile, ça laisse un grand espace vide invisible entre les icônes et le contenu, qui
+   grignote toute la largeur utile. On la corrige uniquement en dessous de 850px. */
+@media (max-width: 850px) {
+    body .dashboard.tab-active { grid-template-columns: 70px 1fr !important; }
+}
+
+/* Sur bureau : rapproche le contenu des onglets (Contacts, Appareils, Paramètres) de la barre
+   latérale au lieu de le centrer au milieu de l'écran. */
+@media (min-width: 851px) {
+    #tab-contacts, #tab-devices, #tab-settings { margin: 0 !important; }
+}
+
+/* Garantit que le bouton « Discuter » ne déborde plus jamais, même dans un cas imprévu */
+@media (max-width: 420px) {
+    .x-contact-btn { padding: 7px 9px; font-size: 0; gap: 0; }
+    .x-contact-btn i { font-size: 15px; }
+}
 @media (max-width: 380px) {
     .x-contact-btn { padding: 8px 10px; font-size: 12px; }
 }
