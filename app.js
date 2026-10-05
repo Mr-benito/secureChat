@@ -280,6 +280,10 @@ body .conversation .unread { box-sizing: border-box; align-items: center; justif
 .x-contact-name { margin: 0; font-size: 15px; font-weight: 600; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Filet de sécurité : qu'un texte non tronqué quelque part ne pousse plus jamais un bouton hors de l'écran */
 body { overflow-x: hidden; }
+/* Piège classique des grilles CSS : un enfant direct de .dashboard (grid) a une largeur minimale
+   invisible basée sur son contenu (comme min-width:auto en flexbox). Si un bouton à l'intérieur
+   refuse de rétrécir, c'est toute la colonne de la grille qui s'élargit au-delà de l'écran. */
+.dashboard > * { min-width: 0; }
 @media (max-width: 380px) {
     .x-contact-btn { padding: 8px 10px; font-size: 12px; }
 }
@@ -355,6 +359,21 @@ html[data-theme="dark"] body .message-form input[type="text"]:focus { background
 .x-badge-silver { --badge-bg: #a4b0c2; --badge-border: #e7edf6; }
 .x-badge-gold   { --badge-bg: #d9a828; --badge-border: #ffe17a; }
 body .chat-user h2 .x-badge { width: 19px; height: 19px; }
+
+/* ---------- Liste des membres d'un groupe : cliquable pour discuter, étiquette admin ---------- */
+.x-member-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-radius: 10px; }
+.x-member-row.x-member-clickable { cursor: pointer; transition: background-color .15s ease; }
+.x-member-row.x-member-clickable:hover { background-color: #f1f5f9; }
+.x-member-info { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.x-admin-tag { flex-shrink: 0; padding: 2px 8px; border-radius: 999px; background: var(--x-accent); color: #fff; font-size: 11px; font-weight: 600; }
+html[data-theme="dark"] .x-member-row.x-member-clickable:hover { background-color: #273449; }
+
+/* ---------- Badge du nombre de favoris, dans la barre latérale (même style que les non-lus) ---------- */
+.menu-item strong#favoritesCountBadge {
+    display: flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+    background: var(--x-accent); font-size: 11px; font-weight: bold; color: #ffffff; line-height: 1;
+}
 
 /* ---------- Message impossible à déchiffrer (groupe) ---------- */
 body .message.x-undecryptable p { font-style: italic; opacity: .75; }
@@ -1106,6 +1125,8 @@ function cleanupSession() {
     if (unsubscribeGroups) { unsubscribeGroups(); unsubscribeGroups = null; }
     if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
     if (unsubscribeStatus) { unsubscribeStatus(); unsubscribeStatus = null; }
+    if (unsubscribeFavorites) { unsubscribeFavorites(); unsubscribeFavorites = null; }
+    favoritesSet.clear();
     unsubscribeBlocks.forEach((fn) => fn());
     unsubscribeBlocks = [];
     convState.forEach((s) => s.unsubs.forEach((fn) => fn()));
@@ -1221,6 +1242,7 @@ function setupTabNavigation() {
 
                 if (targetTab === "devices") loadDevicePublicKey();
                 if (targetTab === "settings") renderAppearanceCard();
+                if (targetTab === "pinned") renderFavoritesTab();
                 updateTotalUnread();
             }
         });
@@ -1306,6 +1328,7 @@ auth.onAuthStateChanged((user) => {
             listenBlocks(user.uid);
             loadContacts();
             listenGroups(user.uid);
+            listenFavorites();
             mountGroupFab();
             initPeerJS(user.uid);
             initUserKeys(user);
@@ -1512,6 +1535,7 @@ function addConversation(user) {
         state.badgeEl = badgeEl;
     }
 
+    attachFavoriteContextMenu(el, user.uid, "user");
     container.appendChild(el);
     refreshConvUI(state);
 }
@@ -1661,6 +1685,133 @@ function sortConversations() {
 }
 
 // Compteur total (badge du menu + titre de l'onglet)
+// ============================================================================
+// FAVORIS — contacts et groupes épinglés, visibles dans l'onglet « Favoris »
+// ============================================================================
+const favoritesSet = new Set(); // targetId (uid ou groupId) actuellement en favori
+let unsubscribeFavorites = null;
+
+function favoriteDocId(targetId) { return `${currentUser.uid}_${targetId}`; }
+function isFavorite(targetId) { return favoritesSet.has(targetId); }
+
+function listenFavorites() {
+    if (unsubscribeFavorites) { unsubscribeFavorites(); unsubscribeFavorites = null; }
+    unsubscribeFavorites = db.collection("favorites").where("ownerId", "==", currentUser.uid)
+        .onSnapshot((snap) => {
+            favoritesSet.clear();
+            snap.forEach((doc) => { const d = doc.data(); if (d && d.targetId) favoritesSet.add(d.targetId); });
+            updateFavoritesBadge();
+            renderFavoritesTab();
+        }, (err) => console.error("Erreur chargement des favoris :", err));
+}
+
+async function toggleFavorite(targetId, targetType) {
+    const ref = db.collection("favorites").doc(favoriteDocId(targetId));
+    try {
+        if (favoritesSet.has(targetId)) {
+            await ref.delete();
+            showToast("Retiré des favoris");
+        } else {
+            await ref.set({ ownerId: currentUser.uid, targetId, targetType, addedAt: FieldValue.serverTimestamp() });
+            showToast("Ajouté aux favoris");
+        }
+    } catch (err) {
+        console.error("Erreur favoris :", err);
+        showToast("Action impossible", "Vérifiez votre connexion et réessayez.");
+    }
+}
+
+// Menu contextuel (clic droit sur ordinateur, appui long sur mobile) pour ajouter/retirer un favori.
+function attachFavoriteContextMenu(el, targetId, targetType) {
+    const openFavMenu = (x, y) => {
+        const fav = isFavorite(targetId);
+        openMenu(x, y, [
+            { label: fav ? "Retirer des favoris" : "Ajouter aux favoris", icon: fav ? "fa-solid fa-star" : "fa-regular fa-star", action: () => toggleFavorite(targetId, targetType) }
+        ]);
+    };
+    el.addEventListener("contextmenu", (e) => { e.preventDefault(); openFavMenu(e.clientX, e.clientY); });
+
+    let pressTimer = null;
+    el.addEventListener("touchstart", (e) => {
+        const touch = e.touches[0];
+        pressTimer = setTimeout(() => openFavMenu(touch.clientX, touch.clientY), 500);
+    }, { passive: true });
+    const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+    el.addEventListener("touchend", cancelPress);
+    el.addEventListener("touchmove", cancelPress);
+}
+
+// Construit (une seule fois) le contenu de l'onglet Favoris ; la section elle-même peut être
+// absente du HTML d'origine, on la crée alors dynamiquement, au même endroit que les autres onglets.
+function getFavoritesListEl() {
+    let host = document.getElementById("tab-pinned");
+    if (!host) {
+        const parent = qs(".dashboard");
+        if (!parent) return null;
+        host = mk("section", { id: "tab-pinned", style: "display:none;padding:25px;max-width:700px;margin:0 auto;" });
+        parent.appendChild(host);
+    }
+    let list = document.getElementById("favorites-list");
+    if (!list) {
+        host.textContent = "";
+        host.appendChild(mk("h2", { style: "font-size:20px;margin-bottom:20px;" }, ico("fa-regular fa-star", null), " Favoris"));
+        list = mk("div", { id: "favorites-list" });
+        host.appendChild(list);
+    }
+    return list;
+}
+
+function renderFavoritesTab() {
+    const list = getFavoritesListEl();
+    if (!list) return;
+    list.textContent = "";
+
+    const items = [];
+    favoritesSet.forEach((targetId) => {
+        const g = groupState.get(targetId);
+        if (g) { items.push({ id: targetId, name: g.name, isGroup: true }); return; }
+        const u = usersById.get(targetId);
+        if (u) items.push({ id: targetId, name: u.username || u.userName || u.displayName || "Utilisateur", isGroup: false });
+    });
+    items.sort((a, b) => a.name.localeCompare(b.name, "fr"));
+
+    if (items.length === 0) {
+        list.appendChild(mk("p", { class: "x-empty-users", text: "Aucun favori pour l'instant. Clic droit (ou appui long) sur un contact, un groupe, ou dans une discussion, pour l'ajouter ici." }));
+        return;
+    }
+
+    items.forEach((it) => {
+        const av = mk("div", { class: "avatar x-av" });
+        paintAvatar(av, it.name, it.isGroup);
+        const card = mk("div", { class: "x-contact-card" },
+            mk("div", { class: "x-contact-main" }, av, mk("div", { class: "x-contact-text" }, nameWithBadge(it.name, it.id))),
+            mk("button", {
+                class: "btn-chat-start x-contact-btn", type: "button",
+                onclick: () => { it.isGroup ? openGroupChat(it.id) : openChatWith(it.id); }
+            }, ico("fa-solid fa-comment"), " Discuter")
+        );
+        attachFavoriteContextMenu(card, it.id, it.isGroup ? "group" : "user");
+        list.appendChild(card);
+    });
+}
+
+function updateFavoritesBadge() {
+    let badge = document.getElementById("favoritesCountBadge");
+    if (!badge) {
+        const menuItem = qs('.sidebar-menu .menu-item[data-tab="pinned"]');
+        if (!menuItem) return;
+        badge = mk("strong", { id: "favoritesCountBadge", style: "display:none;" });
+        menuItem.appendChild(badge);
+    }
+    const n = favoritesSet.size;
+    if (n > 0) {
+        badge.textContent = n > 99 ? "99+" : String(n);
+        badge.style.display = "flex";
+    } else {
+        badge.style.display = "none";
+    }
+}
+
 function updateTotalUnread() {
     let total = 0;
     convState.forEach((s) => {
@@ -1743,6 +1894,7 @@ function addContactCard(user) {
     );
 
     contactCards.set(user.uid, { el, nameEl, avatarEl, subEl });
+    attachFavoriteContextMenu(el, user.uid, "user");
     container.appendChild(el);
 }
 // Ouvre la discussion avec un utilisateur (liste, contacts, QR, notification…)
@@ -1879,6 +2031,7 @@ function addGroupConversation(group) {
             (err) => console.error("Erreur écoute messages de groupe :", err)
         )
     );
+    attachFavoriteContextMenu(el, group.id, "group");
     container.appendChild(el);
     refreshGroupUI(state);
 }
@@ -2303,15 +2456,45 @@ function openCreateGroupDialog() {
 function showGroupMembers() {
     const chat = activeChat;
     if (!chat || !chat.isGroup) return;
-    const names = (chat.members || []).map((uid) => {
-        if (uid === currentUser.uid) return `${myUsername} (vous)`;
-        return usersById.get(uid)?.username || "Utilisateur";
+    const members = chat.members || [];
+
+    const close = () => { document.removeEventListener("keydown", onKey); backdrop.remove(); };
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+
+    const rows = members.map((uid) => {
+        const isMe = uid === currentUser.uid;
+        const isAdmin = uid === chat.createdBy;
+        const u = usersById.get(uid);
+        const name = isMe ? myUsername : (u?.username || u?.userName || u?.displayName || (u?.email ? u.email.split("@")[0] : "Utilisateur"));
+
+        const av = mk("div", { class: "avatar x-av" });
+        paintAvatar(av, name);
+
+        const row = mk("div", { class: "x-member-row" + (isMe ? "" : " x-member-clickable") },
+            av,
+            mk("div", { class: "x-member-info" },
+                nameWithBadge(isMe ? `${name} (vous)` : name, uid),
+                isAdmin ? mk("span", { class: "x-admin-tag", text: "Admin" }) : null
+            )
+        );
+        if (!isMe) {
+            row.addEventListener("click", () => { close(); openChatWith(uid); });
+            attachFavoriteContextMenu(row, uid, "user");
+        }
+        return row;
     });
-    openDialog({
-        title: `Membres (${names.length})`,
-        message: names.join("\n"),
-        actions: [{ label: "Fermer", value: true, variant: "ghost" }]
-    });
+
+    const backdrop = mk("div", { class: "x-backdrop", onclick: (e) => { if (e.target === backdrop) close(); } },
+        mk("div", { class: "x-dialog", role: "dialog", "aria-modal": "true" },
+            mk("h3", { text: `Membres (${members.length})` }),
+            mk("div", { class: "x-group-members" }, rows),
+            mk("div", { class: "x-actions" },
+                mk("button", { type: "button", class: "x-btn x-btn-ghost", text: "Fermer", onclick: close })
+            )
+        )
+    );
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(backdrop);
 }
 
 // ---------- Ajout de membres (réservé à l'administrateur = créateur du groupe) ----------
@@ -2526,18 +2709,24 @@ function renderChatLayout() {
 
             if (activeChat && activeChat.isGroup) {
                 const isAdmin = activeChat.createdBy === currentUser.uid;
+                const favGroup = isFavorite(activeChat.id);
                 const items = [{ label: "Voir les membres", icon: "fa-solid fa-users", action: showGroupMembers }];
                 if (isAdmin) items.push({ label: "Ajouter des membres", icon: "fa-solid fa-user-plus", action: openAddMembersDialog });
+                items.push({ label: favGroup ? "Retirer des favoris" : "Ajouter aux favoris", icon: favGroup ? "fa-solid fa-star" : "fa-regular fa-star", action: () => toggleFavorite(activeChat.id, "group") });
                 items.push({ label: "Quitter le groupe", icon: "fa-solid fa-right-from-bracket", danger: true, action: confirmLeaveGroup });
                 openMenu(r.right - 220, r.bottom + 6, items);
                 return;
             }
 
             const uid = activeChatUserId;
-            const item = blockedByMe.has(uid)
-                ? { label: "Débloquer ce contact", icon: "fa-solid fa-unlock", action: () => unblockUser(uid) }
-                : { label: "Bloquer ce contact", icon: "fa-solid fa-ban", danger: true, action: () => confirmBlock(uid) };
-            openMenu(r.right - 200, r.bottom + 6, [item]);
+            const favUser = isFavorite(uid);
+            const items = [
+                { label: favUser ? "Retirer des favoris" : "Ajouter aux favoris", icon: favUser ? "fa-solid fa-star" : "fa-regular fa-star", action: () => toggleFavorite(uid, "user") },
+                blockedByMe.has(uid)
+                    ? { label: "Débloquer ce contact", icon: "fa-solid fa-unlock", action: () => unblockUser(uid) }
+                    : { label: "Bloquer ce contact", icon: "fa-solid fa-ban", danger: true, action: () => confirmBlock(uid) }
+            ];
+            openMenu(r.right - 220, r.bottom + 6, items);
         });
     }
 

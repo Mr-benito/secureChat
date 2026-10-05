@@ -58,6 +58,15 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.blockerId == request.auth.uid;
     }
 
+    // Favoris (contacts/groupes épinglés) : strictement privés, chacun ne voit/gère que les siens
+    match /favorites/{favId} {
+      allow read: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && favId == request.auth.uid + '_' + request.resource.data.targetId;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
     match /chats/{chatId} {
       allow read, write: if inChat(chatId);
 
