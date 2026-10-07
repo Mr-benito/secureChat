@@ -293,11 +293,12 @@ body { overflow-x: hidden; }
     body .dashboard.tab-active { grid-template-columns: 70px 1fr !important; }
 }
 
-/* Sur bureau : rapproche le contenu des onglets (Contacts, Appareils, Paramètres) de la barre
-   latérale au lieu de le centrer au milieu de l'écran. */
-@media (min-width: 851px) {
-    #tab-contacts, #tab-devices, #tab-settings { margin: 0 !important; }
-}
+/* LA VRAIE CAUSE, identifiée avec un vrai navigateur (Chromium) : ces sections ont, dans le
+   HTML d'origine, un style inline « margin: 0 auto ». Sur une grille CSS, une marge automatique
+   désactive l'étirement par défaut (stretch) de l'élément dans sa colonne — il se dimensionne
+   alors sur son CONTENU (non rétréci) plutôt que sur la largeur réelle de la colonne, et déborde.
+   En plus, ça rapproche le contenu de la barre latérale sur bureau, comme demandé. */
+#tab-contacts, #tab-devices, #tab-settings { margin: 0 !important; }
 
 /* Garantit que le bouton « Discuter » ne déborde plus jamais, même dans un cas imprévu */
 @media (max-width: 420px) {
