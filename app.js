@@ -1646,7 +1646,7 @@ function refreshConvUI(s) {
     }
     paintAvatar(s.avatarEl, shownName);
 
-    s.nameEl.style.fontWeight = unread > 0 ? "800" : "600";qq
+    s.nameEl.style.fontWeight = unread > 0 ? "800" : "600";
     s.textEl.style.fontWeight = unread > 0 ? "700" : "normal";
     s.textEl.style.color = unread > 0 ? "#0f172a" : "#64748b";
 
