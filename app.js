@@ -87,10 +87,25 @@ let sortTimer = null;
 let presenceBound = false;
 
 // PeerJS / appels
-let peer = null;
-let currentCall = null;
+// Appels — WebRTC natif, signalisation 100% Firestore (plus de PeerJS/0.peerjs.com)
 let localStream = null;
-let incomingCall = null;
+let currentPeerConnection = null;
+let unsubscribeCallDoc = null;      // écoute du document d'appel actif (offre/réponse/candidats)
+let unsubscribeIncomingCalls = null; // écoute permanente des appels entrants
+let incomingCallId = null;
+let incomingCallData = null;
+let appliedCandidateCounts = { caller: 0, receiver: 0 }; // évite de rejouer un candidat déjà ajouté
+
+const ICE_SERVERS = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    // Serveurs TURN (Metered.ca) — à compléter avec les identifiants fournis.
+    // Indispensables pour que les appels passent sur la plupart des réseaux mobiles (4G/5G),
+    // les serveurs STUN seuls échouent souvent à cause du NAT des opérateurs.
+    { urls: "turn:global.relay.metered.ca:80", username: "TURN_USERNAME", credential: "TURN_CREDENTIAL" },
+    { urls: "turn:global.relay.metered.ca:443", username: "TURN_USERNAME", credential: "TURN_CREDENTIAL" },
+    { urls: "turns:global.relay.metered.ca:443", username: "TURN_USERNAME", credential: "TURN_CREDENTIAL" }
+];
 
 const usersById = new Map();      // uid -> données utilisateur
 const convState = new Map();      // uid -> état de la conversation 1:1 dans la liste
@@ -1148,6 +1163,8 @@ function cleanupSession() {
     if (unsubscribeStatus) { unsubscribeStatus(); unsubscribeStatus = null; }
     if (unsubscribeFavorites) { unsubscribeFavorites(); unsubscribeFavorites = null; }
     favoritesSet.clear();
+    if (unsubscribeIncomingCalls) { unsubscribeIncomingCalls(); unsubscribeIncomingCalls = null; }
+    if (unsubscribeCallDoc) { unsubscribeCallDoc(); unsubscribeCallDoc = null; }
     unsubscribeBlocks.forEach((fn) => fn());
     unsubscribeBlocks = [];
     convState.forEach((s) => s.unsubs.forEach((fn) => fn()));
@@ -1166,7 +1183,7 @@ function cleanupSession() {
     activeChatUserId = null;
     activeChat = null;
     editingMsg = null;
-    if (peer) { try { peer.destroy(); } catch (e) { /* déjà fermé */ } peer = null; }
+    endCallUI(); // ferme proprement tout appel WebRTC en cours (plus de peer.destroy() à faire)
 }
 
 async function signOutAndRedirect() {
@@ -1351,7 +1368,7 @@ auth.onAuthStateChanged((user) => {
             listenGroups(user.uid);
             listenFavorites();
             mountGroupFab();
-            initPeerJS(user.uid);
+            listenIncomingCalls(user.uid);
             initUserKeys(user);
             startPresence(user.uid);
             requestNotificationPermissionOnce();
@@ -3493,51 +3510,29 @@ async function openQrScanner() {
 }
 
 // ============================================================================
-// 16. PEERJS ET APPELS WEBRTC
+// 16. APPELS WEBRTC — signalisation 100% Firestore (web ET mobile peuvent s'appeler)
 // ============================================================================
-function initPeerJS(userId) {
-    if (peer && !peer.destroyed) return;
-    if (typeof Peer === "undefined") {
-        console.warn("PeerJS n'est pas chargé : les appels sont désactivés.");
-        return;
-    }
 
-    peer = new Peer(userId, {
-        config: {
-            iceServers: [
-                { urls: "stun:stun.l.google.com:19302" },
-                { urls: "stun:stun1.l.google.com:19302" },
-                { urls: "stun:stun2.l.google.com:19302" }
-            ]
-        }
-    });
-
-    peer.on("open", (id) => {
-        console.log("Connecté au serveur PeerJS avec l'ID :", id);
-    });
-
-    peer.on("call", (call) => {
-        if (blockedByMe.has(call.peer)) { call.close(); return; }
-        incomingCall = call;
-        showIncomingCallUI();
-    });
-
-    db.collection("calls")
+// Écoute permanente : un appel entrant pour moi (déclenche l'écran de sonnerie).
+function listenIncomingCalls(userId) {
+    if (unsubscribeIncomingCalls) { unsubscribeIncomingCalls(); unsubscribeIncomingCalls = null; }
+    unsubscribeIncomingCalls = db.collection("calls")
         .where("receiverId", "==", userId)
         .where("status", "==", "calling")
         .onSnapshot((snapshot) => {
             snapshot.docChanges().forEach((change) => {
                 if (change.type === "added") {
-                    const callData = change.doc.data();
-                    if (blockedByMe.has(callData.callerId)) return;
-                    window.currentCallDocId = change.doc.id;
-                    showIncomingCallUI(callData.callerName, callData.isVideo);
+                    const data = change.doc.data();
+                    if (blockedByMe.has(data.callerId)) return;
+                    incomingCallId = change.doc.id;
+                    incomingCallData = data;
+                    showIncomingCallUI(data.callerName, data.isVideo);
                 }
                 if (change.type === "modified" && change.doc.data().status === "ended") {
                     endCallUI();
                 }
             });
-        });
+        }, (err) => console.error("Erreur écoute des appels entrants :", err));
 }
 
 function showIncomingCallUI(callerName = "Un contact", isVideo = false) {
@@ -3550,18 +3545,47 @@ function showIncomingCallUI(callerName = "Un contact", isVideo = false) {
     if (acceptBtn) acceptBtn.style.display = "inline-block";
 }
 
+// Applique les nouveaux candidats ICE d'un tableau Firestore, sans rejouer ceux déjà connus
+// (chaque mise à jour renvoie le tableau complet depuis le début, via arrayUnion côté écriture).
+async function applyNewCandidates(pc, candidates, role) {
+    const already = appliedCandidateCounts[role];
+    const fresh = (candidates || []).slice(already);
+    for (const c of fresh) {
+        try { await pc.addIceCandidate(new RTCIceCandidate(c)); }
+        catch (e) { console.warn("Candidat ICE ignoré :", e); }
+    }
+    appliedCandidateCounts[role] = (candidates || []).length;
+}
+
+function attachMediaHandlers(pc, isVideo) {
+    pc.ontrack = (event) => {
+        const remoteStream = event.streams[0];
+        const callStatus = document.getElementById("callStatus");
+        if (callStatus) callStatus.textContent = "En communication...";
+        if (isVideo) {
+            const remoteVideo = document.getElementById("remoteVideo");
+            if (remoteVideo) remoteVideo.srcObject = remoteStream;
+        } else {
+            const remoteAudio = document.getElementById("remoteAudio");
+            if (remoteAudio) remoteAudio.srcObject = remoteStream;
+        }
+    };
+    pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+            console.warn("Connexion d'appel perdue :", pc.connectionState);
+        }
+    };
+}
+
+// ---------- Appel sortant ----------
 async function startCall(targetUserId, isVideo = false) {
-    if (!peer) return alert("Service d'appel non prêt.");
     if (blockedByMe.has(targetUserId)) {
         showToast("Contact bloqué", "Débloquez ce contact pour l'appeler.");
         return;
     }
 
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: isVideo,
-            audio: true
-        });
+        localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
 
         const callModal = document.getElementById("callModal");
         const callStatus = document.getElementById("callStatus");
@@ -3571,137 +3595,167 @@ async function startCall(targetUserId, isVideo = false) {
         if (callModal) callModal.style.display = "flex";
         if (callStatus) callStatus.textContent = "Appel en cours...";
         if (acceptBtn) acceptBtn.style.display = "none";
-
         if (isVideo && videoContainer) {
             videoContainer.style.display = "block";
             const localVideo = document.getElementById("localVideo");
             if (localVideo) localVideo.srcObject = localStream;
         }
 
-        const call = peer.call(targetUserId, localStream);
-        currentCall = call;
+        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        currentPeerConnection = pc;
+        appliedCandidateCounts = { caller: 0, receiver: 0 };
+        localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+        attachMediaHandlers(pc, isVideo);
+
+        const pendingCandidates = [];
+        pc.onicecandidate = (event) => {
+            if (!event.candidate) return;
+            const c = { candidate: event.candidate.candidate, sdpMid: event.candidate.sdpMid, sdpMLineIndex: event.candidate.sdpMLineIndex };
+            if (window.currentCallDocId) {
+                db.collection("calls").doc(window.currentCallDocId).update({ callerCandidates: FieldValue.arrayUnion(c) }).catch(() => {});
+            } else {
+                pendingCandidates.push(c); // l'ICE peut démarrer avant que le document existe
+            }
+        };
+
+        // L'offre est créée AVANT d'écrire le document, pour l'inclure dans la même écriture
+        // (évite une fenêtre où le destinataire verrait un appel « entrant » sans offre encore présente).
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
 
         const callDoc = await db.collection("calls").add({
             callerId: currentUser.uid,
             callerName: currentUser.displayName || currentUser.email?.split("@")[0] || "Un contact",
             receiverId: targetUserId,
-            isVideo: isVideo,
+            isVideo,
             status: "calling",
-            timestamp: FieldValue.serverTimestamp()
+            timestamp: FieldValue.serverTimestamp(),
+            offer: { type: offer.type, sdp: offer.sdp },
+            callerCandidates: []
         });
-
         window.currentCallDocId = callDoc.id;
+        if (pendingCandidates.length) {
+            await callDoc.update({ callerCandidates: FieldValue.arrayUnion(...pendingCandidates) });
+        }
 
-        call.on("stream", (remoteStream) => {
-            if (callStatus) callStatus.textContent = "En communication...";
-            if (isVideo) {
-                const remoteVideo = document.getElementById("remoteVideo");
-                if (remoteVideo) remoteVideo.srcObject = remoteStream;
-            } else {
-                const remoteAudio = document.getElementById("remoteAudio");
-                if (remoteAudio) remoteAudio.srcObject = remoteStream;
+        unsubscribeCallDoc = callDoc.onSnapshot(async (snap) => {
+            const data = snap.data();
+            if (!data) return;
+            if (data.answer && !pc.currentRemoteDescription) {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
             }
-        });
+            await applyNewCandidates(pc, data.receiverCandidates, "receiver");
+            if (data.status === "ended") endCallUI();
+        }, (err) => console.error("Erreur suivi de l'appel :", err));
 
-        call.on("close", endCall);
+        // Personne ne répond après 30s : on raccroche proprement.
+        setTimeout(() => {
+            if (window.currentCallDocId === callDoc.id && pc.connectionState !== "connected") endCall();
+        }, 30000);
 
     } catch (err) {
         console.error("Erreur lancement appel :", err);
         alert("Permission refusée pour la caméra/micro.");
+        endCallUI();
     }
 }
 
-function endCallUI() {
-    if (currentCall) {
-        currentCall.close();
-        currentCall = null;
-    }
-    if (incomingCall) {
-        incomingCall.close();
-        incomingCall = null;
-    }
+// ---------- Accepter un appel entrant ----------
+async function acceptCall() {
+    if (!incomingCallId || !incomingCallData || !incomingCallData.offer) return;
 
+    try {
+        const isVideo = incomingCallData.isVideo;
+        localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+
+        const callStatus = document.getElementById("callStatus");
+        const videoContainer = document.getElementById("videoContainer");
+        const acceptBtn = document.getElementById("acceptCallBtn");
+        if (callStatus) callStatus.textContent = "En communication...";
+        if (acceptBtn) acceptBtn.style.display = "none";
+        if (isVideo && videoContainer) {
+            videoContainer.style.display = "block";
+            const localVideo = document.getElementById("localVideo");
+            if (localVideo) localVideo.srcObject = localStream;
+        }
+
+        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        currentPeerConnection = pc;
+        appliedCandidateCounts = { caller: 0, receiver: 0 };
+        localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+        attachMediaHandlers(pc, isVideo);
+
+        const callDoc = db.collection("calls").doc(incomingCallId);
+        pc.onicecandidate = (event) => {
+            if (!event.candidate) return;
+            const c = { candidate: event.candidate.candidate, sdpMid: event.candidate.sdpMid, sdpMLineIndex: event.candidate.sdpMLineIndex };
+            callDoc.update({ receiverCandidates: FieldValue.arrayUnion(c) }).catch(() => {});
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
+        // Les candidats ICE de l'appelant déjà présents à ce stade (il a pu en écrire avant notre réponse)
+        await applyNewCandidates(pc, incomingCallData.callerCandidates, "caller");
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await callDoc.update({ answer: { type: answer.type, sdp: answer.sdp }, status: "accepted", receiverCandidates: [] });
+
+        window.currentCallDocId = incomingCallId;
+        unsubscribeCallDoc = callDoc.onSnapshot(async (snap) => {
+            const data = snap.data();
+            if (!data) return;
+            await applyNewCandidates(pc, data.callerCandidates, "caller");
+            if (data.status === "ended") endCallUI();
+        }, (err) => console.error("Erreur suivi de l'appel :", err));
+
+    } catch (err) {
+        console.error("Erreur acceptation appel :", err);
+        alert("Impossible d'accéder au micro ou à la caméra.");
+        endCall();
+    }
+}
+
+// ---------- Fin d'appel ----------
+function endCallUI() {
+    if (currentPeerConnection) {
+        currentPeerConnection.close();
+        currentPeerConnection = null;
+    }
+    if (unsubscribeCallDoc) { unsubscribeCallDoc(); unsubscribeCallDoc = null; }
     if (localStream) {
         localStream.getTracks().forEach((track) => track.stop());
         localStream = null;
     }
+    incomingCallId = null;
+    incomingCallData = null;
+    appliedCandidateCounts = { caller: 0, receiver: 0 };
 
     const callModal = document.getElementById("callModal");
     if (callModal) callModal.style.display = "none";
+    const videoContainer = document.getElementById("videoContainer");
+    if (videoContainer) videoContainer.style.display = "none";
 
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
     const remoteAudio = document.getElementById("remoteAudio");
-
     if (localVideo) localVideo.srcObject = null;
     if (remoteVideo) remoteVideo.srcObject = null;
     if (remoteAudio) remoteAudio.srcObject = null;
 }
 
 async function endCall() {
+    const docId = window.currentCallDocId || incomingCallId;
     endCallUI();
-
-    if (window.currentCallDocId) {
-        try {
-            await db.collection("calls").doc(window.currentCallDocId).update({
-                status: "ended"
-            });
-            window.currentCallDocId = null;
-        } catch (e) {
-            console.warn("Erreur fermeture appel Firestore :", e);
-        }
+    if (docId) {
+        try { await db.collection("calls").doc(docId).update({ status: "ended" }); }
+        catch (e) { console.warn("Erreur fermeture appel Firestore :", e); }
     }
+    window.currentCallDocId = null;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
     const acceptCallBtn = document.getElementById("acceptCallBtn");
     const endCallBtn = document.getElementById("endCallBtn");
-
-    if (acceptCallBtn) {
-        acceptCallBtn.addEventListener("click", async () => {
-            if (!incomingCall) return;
-
-            try {
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
-                    audio: true
-                });
-
-                const callStatus = document.getElementById("callStatus");
-                const videoContainer = document.getElementById("videoContainer");
-
-                if (callStatus) callStatus.textContent = "En communication...";
-                acceptCallBtn.style.display = "none";
-
-                incomingCall.answer(localStream);
-                currentCall = incomingCall;
-
-                currentCall.on("stream", (remoteStream) => {
-                    const hasVideo = remoteStream.getVideoTracks().length > 0;
-
-                    if (hasVideo && videoContainer) {
-                        videoContainer.style.display = "block";
-                        const localVideo = document.getElementById("localVideo");
-                        const remoteVideo = document.getElementById("remoteVideo");
-                        if (localVideo) localVideo.srcObject = localStream;
-                        if (remoteVideo) remoteVideo.srcObject = remoteStream;
-                    } else if (videoContainer) {
-                        videoContainer.style.display = "none";
-                        const remoteAudio = document.getElementById("remoteAudio");
-                        if (remoteAudio) remoteAudio.srcObject = remoteStream;
-                    }
-                });
-
-                currentCall.on("close", endCall);
-
-            } catch (err) {
-                console.error("Erreur acceptation appel :", err);
-                alert("Impossible d'accéder au micro ou à la caméra.");
-            }
-        });
-    }
-
-    if (endCallBtn) {
-        endCallBtn.addEventListener("click", endCall);
-    }
+    if (acceptCallBtn) acceptCallBtn.addEventListener("click", acceptCall);
+    if (endCallBtn) endCallBtn.addEventListener("click", endCall);
 });
