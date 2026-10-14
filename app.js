@@ -99,12 +99,15 @@ let appliedCandidateCounts = { caller: 0, receiver: 0 }; // évite de rejouer un
 const ICE_SERVERS = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
-    // Serveurs TURN (Metered.ca) — à compléter avec les identifiants fournis.
-    // Indispensables pour que les appels passent sur la plupart des réseaux mobiles (4G/5G),
-    // les serveurs STUN seuls échouent souvent à cause du NAT des opérateurs.
-    { urls: "turn:global.relay.metered.ca:80", username: "TURN_USERNAME", credential: "TURN_CREDENTIAL" },
-    { urls: "turn:global.relay.metered.ca:443", username: "TURN_USERNAME", credential: "TURN_CREDENTIAL" },
-    { urls: "turns:global.relay.metered.ca:443", username: "TURN_USERNAME", credential: "TURN_CREDENTIAL" }
+    { urls: "turn:global.relay.metered.ca:80",
+      username: "45b58254e6be5ae0207f7a9f",
+      credential: "OjjU1NNUEbsSvalw" },
+    { urls: "turn:global.relay.metered.ca:443",
+      username: "45b58254e6be5ae0207f7a9f",
+      credential: "OjjU1NNUEbsSvalw" },
+    { urls: "turns:global.relay.metered.ca:443",
+      username: "45b58254e6be5ae0207f7a9f",
+      credential: "OjjU1NNUEbsSvalw" }
 ];
 
 const usersById = new Map();      // uid -> données utilisateur
@@ -3516,23 +3519,38 @@ async function openQrScanner() {
 // Écoute permanente : un appel entrant pour moi (déclenche l'écran de sonnerie).
 function listenIncomingCalls(userId) {
     if (unsubscribeIncomingCalls) { unsubscribeIncomingCalls(); unsubscribeIncomingCalls = null; }
+
+    // Filtre SIMPLE (un seul where) → pas d'index composite requis
     unsubscribeIncomingCalls = db.collection("calls")
         .where("receiverId", "==", userId)
-        .where("status", "==", "calling")
         .onSnapshot((snapshot) => {
             snapshot.docChanges().forEach((change) => {
-                if (change.type === "added") {
-                    const data = change.doc.data();
+                const data = change.doc.data();
+
+                // Filtre status == "calling" EN JS
+                if (change.type === "added" && data.status === "calling") {
                     if (blockedByMe.has(data.callerId)) return;
+
+                    // Ignore si on est déjà en appel avec ce doc
+                    if (incomingCallId === change.doc.id) return;
+
                     incomingCallId = change.doc.id;
                     incomingCallData = data;
                     showIncomingCallUI(data.callerName, data.isVideo);
                 }
-                if (change.type === "modified" && change.doc.data().status === "ended") {
-                    endCallUI();
+
+                if (change.type === "modified" && data.status === "ended") {
+                    if (incomingCallId === change.doc.id) {
+                        incomingCallId = null;
+                        incomingCallData = null;
+                        endCallUI();
+                    }
                 }
             });
-        }, (err) => console.error("Erreur écoute des appels entrants :", err));
+        }, (err) => {
+            console.error("Erreur écoute des appels entrants :", err);
+            console.error("→ Probablement un index Firestore manquant. Va sur Firebase Console → Firestore → Index et crée l'index pour receiverId (ASC) + status (ASC).");
+        });
 }
 
 function showIncomingCallUI(callerName = "Un contact", isVideo = false) {
