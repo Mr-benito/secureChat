@@ -3612,57 +3612,46 @@ async function startCall(targetUserId, isVideo = false) {
         localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
         attachMediaHandlers(pc, isVideo);
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+        // 1. Créer la réf RTDB D'ABORD
+const callRef = rtdb.ref("calls").push();
+window.currentCallDocId = callRef.key;
 
-        // Création d'un nouveau document d'appel dans RTDB
-        const callRef = rtdb.ref("calls").push();
-        const callId = callRef.key;
-        window.currentCallDocId = callId;
+// 2. Créer PC + tracks
+const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+currentPeerConnection = pc;
+localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+attachMediaHandlers(pc, isVideo);
 
-        // ICE candidates : écrits directement dans le nœud du doc d'appel
-        pc.onicecandidate = (event) => {
-            if (!event.candidate) return;
-            callRef.child("callerCandidates").push({
-                candidate: event.candidate.candidate,
-                sdpMid: event.candidate.sdpMid,
-                sdpMLineIndex: event.candidate.sdpMLineIndex
-            });
-        };
+// 3. Attacher onicecandidate AVANT setLocalDescription
+pc.onicecandidate = (event) => {
+    if (!event.candidate) return;
+    callRef.child("callerCandidates").push({
+        candidate: event.candidate.candidate,
+        sdpMid: event.candidate.sdpMid,
+        sdpMLineIndex: event.candidate.sdpMLineIndex
+    });
+};
 
-        await callRef.set({
-            callerId: currentUser.uid,
-            callerName: currentUser.displayName || currentUser.email?.split("@")[0] || "Un contact",
-            receiverId: targetUserId,
-            isVideo: isVideo,
-            status: "calling",
-            timestamp: Date.now(),
-            offer: { type: offer.type, sdp: offer.sdp }
-        });
+// 4. Offer + setLocalDescription
+const offer = await pc.createOffer();
+await pc.setLocalDescription(offer);
 
-        // Écoute des changements sur le doc d'appel (answer + status)
-        const onValue = async (snap) => {
-            const data = snap.val();
-            if (!data) return;
-            if (data.answer && !pc.currentRemoteDescription) {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            }
-            if (data.status === "ended") endCallUI();
-        };
-        callRef.on("value", onValue, (err) => console.error("Erreur suivi de l'appel :", err));
+// 5. Écrire les données principales avec update() (pas set !)
+await callRef.update({
+    callerId: currentUser.uid,
+    callerName: currentUser.displayName || currentUser.email?.split("@")[0] || "Un contact",
+    receiverId: targetUserId,
+    isVideo: isVideo,
+    status: "calling",
+    timestamp: Date.now(),
+    offer: { type: offer.type, sdp: offer.sdp }
+});
 
-        // Écoute des candidats ICE du receiver
-        const onRemoteCandidate = (childSnap) => {
-            const c = childSnap.val();
-            if (!c) return;
-            pc.addIceCandidate(new RTCIceCandidate(c)).catch((e) => console.warn("Candidat ICE ignoré :", e));
-        };
-        callRef.child("receiverCandidates").on("child_added", onRemoteCandidate);
-
-        unsubscribeCallDoc = () => {
-            callRef.off("value", onValue);
-            callRef.child("receiverCandidates").off("child_added", onRemoteCandidate);
-        };
+// 6. Attacher les listeners answer/candidats distants
+const onValue = async (snap) => { ... };
+callRef.on("value", onValue, ...);
+callRef.child("receiverCandidates").on("child_added", onRemoteCandidate);
+unsubscribeCallDoc = () => { ... };
 
         // Personne ne répond après 30 s : on raccroche proprement
         setTimeout(() => {
