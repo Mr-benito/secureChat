@@ -3526,6 +3526,8 @@ function listenIncomingCalls(userId) {
     const onAdded = (snapshot) => {
         const data = snapshot.val();
         if (!data || data.status !== "calling") return;
+        // Ignore les appels de plus de 60 s (stale)
+        if (!data.timestamp || Date.now() - data.timestamp > 60000) return;
         if (blockedByMe.has(data.callerId)) return;
         if (incomingCallId === snapshot.key) return;
 
@@ -3533,7 +3535,6 @@ function listenIncomingCalls(userId) {
         incomingCallData = data;
         showIncomingCallUI(data.callerName, data.isVideo);
     };
-
     const onChanged = (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
@@ -3590,6 +3591,14 @@ async function startCall(targetUserId, isVideo = false) {
         return;
     }
 
+    // Nettoyage : termine tout appel précédent resté en cours + reset de l'UI
+    if (window.currentCallDocId) {
+        try {
+            await rtdb.ref("calls").child(window.currentCallDocId).update({ status: "ended" });
+        } catch (e) { /* on ignore */ }
+    }
+    endCallUI();
+
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
 
@@ -3607,7 +3616,7 @@ async function startCall(targetUserId, isVideo = false) {
             if (localVideo) localVideo.srcObject = localStream;
         }
 
-        // 1. Réf RTDB d'abord (pour pouvoir écrire les candidats ICE dès qu'ils arrivent)
+        // 1. Réf RTDB d'abord
         const callRef = rtdb.ref("calls").push();
         const callId = callRef.key;
         window.currentCallDocId = callId;
@@ -3618,7 +3627,7 @@ async function startCall(targetUserId, isVideo = false) {
         localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
         attachMediaHandlers(pc, isVideo);
 
-        // 3. onicecandidate AVANT setLocalDescription (sinon les premiers candidats sont perdus)
+        // 3. onicecandidate AVANT setLocalDescription
         pc.onicecandidate = (event) => {
             if (!event.candidate) return;
             callRef.child("callerCandidates").push({
@@ -3667,7 +3676,7 @@ async function startCall(targetUserId, isVideo = false) {
             callRef.child("receiverCandidates").off("child_added", onRemoteCandidate);
         };
 
-        // Timeout 30 s : personne ne répond → on raccroche proprement
+        // Timeout 30 s
         setTimeout(() => {
             if (window.currentCallDocId === callId && pc.connectionState !== "connected") endCall();
         }, 30000);
