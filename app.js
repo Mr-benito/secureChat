@@ -3583,6 +3583,102 @@ function attachMediaHandlers(pc, isVideo) {
     };
 }
 
+// ---------- Appel sortant ----------
+async function startCall(targetUserId, isVideo = false) {
+    if (blockedByMe.has(targetUserId)) {
+        showToast("Contact bloqué", "Débloquez ce contact pour l'appeler.");
+        return;
+    }
+
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+
+        const callModal = document.getElementById("callModal");
+        const callStatus = document.getElementById("callStatus");
+        const acceptBtn = document.getElementById("acceptCallBtn");
+        const videoContainer = document.getElementById("videoContainer");
+
+        if (callModal) callModal.style.display = "flex";
+        if (callStatus) callStatus.textContent = "Appel en cours...";
+        if (acceptBtn) acceptBtn.style.display = "none";
+        if (isVideo && videoContainer) {
+            videoContainer.style.display = "block";
+            const localVideo = document.getElementById("localVideo");
+            if (localVideo) localVideo.srcObject = localStream;
+        }
+
+        // 1. Réf RTDB d'abord (pour pouvoir écrire les candidats ICE dès qu'ils arrivent)
+        const callRef = rtdb.ref("calls").push();
+        const callId = callRef.key;
+        window.currentCallDocId = callId;
+
+        // 2. PeerConnection + tracks
+        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        currentPeerConnection = pc;
+        localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+        attachMediaHandlers(pc, isVideo);
+
+        // 3. onicecandidate AVANT setLocalDescription (sinon les premiers candidats sont perdus)
+        pc.onicecandidate = (event) => {
+            if (!event.candidate) return;
+            callRef.child("callerCandidates").push({
+                candidate: event.candidate.candidate,
+                sdpMid: event.candidate.sdpMid,
+                sdpMLineIndex: event.candidate.sdpMLineIndex
+            });
+        };
+
+        // 4. Offer + setLocalDescription
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // 5. update() (pas set) pour ne pas écraser les candidats déjà écrits
+        await callRef.update({
+            callerId: currentUser.uid,
+            callerName: currentUser.displayName || currentUser.email?.split("@")[0] || "Un contact",
+            receiverId: targetUserId,
+            isVideo: isVideo,
+            status: "calling",
+            timestamp: Date.now(),
+            offer: { type: offer.type, sdp: offer.sdp }
+        });
+
+        // 6. Listener answer + statut
+        const onValue = async (snap) => {
+            const data = snap.val();
+            if (!data) return;
+            if (data.answer && !pc.currentRemoteDescription) {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            }
+            if (data.status === "ended") endCallUI();
+        };
+        callRef.on("value", onValue, (err) => console.error("Erreur suivi de l'appel :", err));
+
+        // 7. Listener candidats ICE distants
+        const onRemoteCandidate = (childSnap) => {
+            const c = childSnap.val();
+            if (!c) return;
+            pc.addIceCandidate(new RTCIceCandidate(c)).catch((e) => console.warn("Candidat ICE ignoré :", e));
+        };
+        callRef.child("receiverCandidates").on("child_added", onRemoteCandidate);
+
+        unsubscribeCallDoc = () => {
+            callRef.off("value", onValue);
+            callRef.child("receiverCandidates").off("child_added", onRemoteCandidate);
+        };
+
+        // Timeout 30 s : personne ne répond → on raccroche proprement
+        setTimeout(() => {
+            if (window.currentCallDocId === callId && pc.connectionState !== "connected") endCall();
+        }, 30000);
+
+    } catch (err) {
+        console.error("Erreur lancement appel :", err);
+        alert("Permission refusée pour la caméra/micro.");
+        endCallUI();
+    }
+}
+
 // ---------- Accepter un appel entrant ----------
 async function acceptCall() {
     if (!incomingCallId || !incomingCallData || !incomingCallData.offer) return;
