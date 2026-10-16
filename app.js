@@ -50,6 +50,7 @@ if (!firebase.apps.length) {
 
 const auth = firebase.auth();
 const db = firebase.firestore();
+const rtdb = firebase.database();   //  NOUVEAU : pour les appels
 const FieldValue = firebase.firestore.FieldValue;
 
 // ============================================================================
@@ -3513,44 +3514,43 @@ async function openQrScanner() {
 }
 
 // ============================================================================
-// 16. APPELS WEBRTC — signalisation 100% Firestore (web ET mobile peuvent s'appeler)
+// 16. APPELS WEBRTC — signalisation 100% Realtime Database (RTDB)
 // ============================================================================
 
 // Écoute permanente : un appel entrant pour moi (déclenche l'écran de sonnerie).
 function listenIncomingCalls(userId) {
     if (unsubscribeIncomingCalls) { unsubscribeIncomingCalls(); unsubscribeIncomingCalls = null; }
 
-    // Filtre SIMPLE (un seul where) → pas d'index composite requis
-    unsubscribeIncomingCalls = db.collection("calls")
-        .where("receiverId", "==", userId)
-        .onSnapshot((snapshot) => {
-            snapshot.docChanges().forEach((change) => {
-                const data = change.doc.data();
+    const query = rtdb.ref("calls").orderByChild("receiverId").equalTo(userId);
 
-                // Filtre status == "calling" EN JS
-                if (change.type === "added" && data.status === "calling") {
-                    if (blockedByMe.has(data.callerId)) return;
+    const onAdded = (snapshot) => {
+        const data = snapshot.val();
+        if (!data || data.status !== "calling") return;
+        if (blockedByMe.has(data.callerId)) return;
+        if (incomingCallId === snapshot.key) return;
 
-                    // Ignore si on est déjà en appel avec ce doc
-                    if (incomingCallId === change.doc.id) return;
+        incomingCallId = snapshot.key;
+        incomingCallData = data;
+        showIncomingCallUI(data.callerName, data.isVideo);
+    };
 
-                    incomingCallId = change.doc.id;
-                    incomingCallData = data;
-                    showIncomingCallUI(data.callerName, data.isVideo);
-                }
+    const onChanged = (snapshot) => {
+        const data = snapshot.val();
+        if (!data) return;
+        if (data.status === "ended" && incomingCallId === snapshot.key) {
+            incomingCallId = null;
+            incomingCallData = null;
+            endCallUI();
+        }
+    };
 
-                if (change.type === "modified" && data.status === "ended") {
-                    if (incomingCallId === change.doc.id) {
-                        incomingCallId = null;
-                        incomingCallData = null;
-                        endCallUI();
-                    }
-                }
-            });
-        }, (err) => {
-            console.error("Erreur écoute des appels entrants :", err);
-            console.error("→ Probablement un index Firestore manquant. Va sur Firebase Console → Firestore → Index et crée l'index pour receiverId (ASC) + status (ASC).");
-        });
+    query.on("child_added", onAdded, (err) => console.error("Erreur écoute appels entrants :", err));
+    query.on("child_changed", onChanged, (err) => console.error("Erreur écoute appels entrants :", err));
+
+    unsubscribeIncomingCalls = () => {
+        query.off("child_added", onAdded);
+        query.off("child_changed", onChanged);
+    };
 }
 
 function showIncomingCallUI(callerName = "Un contact", isVideo = false) {
@@ -3561,18 +3561,6 @@ function showIncomingCallUI(callerName = "Un contact", isVideo = false) {
     if (callModal) callModal.style.display = "flex";
     if (callStatus) callStatus.textContent = `${callerName} vous appelle (${isVideo ? "Vidéo" : "Vocal"})...`;
     if (acceptBtn) acceptBtn.style.display = "inline-block";
-}
-
-// Applique les nouveaux candidats ICE d'un tableau Firestore, sans rejouer ceux déjà connus
-// (chaque mise à jour renvoie le tableau complet depuis le début, via arrayUnion côté écriture).
-async function applyNewCandidates(pc, candidates, role) {
-    const already = appliedCandidateCounts[role];
-    const fresh = (candidates || []).slice(already);
-    for (const c of fresh) {
-        try { await pc.addIceCandidate(new RTCIceCandidate(c)); }
-        catch (e) { console.warn("Candidat ICE ignoré :", e); }
-    }
-    appliedCandidateCounts[role] = (candidates || []).length;
 }
 
 function attachMediaHandlers(pc, isVideo) {
@@ -3621,54 +3609,64 @@ async function startCall(targetUserId, isVideo = false) {
 
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         currentPeerConnection = pc;
-        appliedCandidateCounts = { caller: 0, receiver: 0 };
         localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
         attachMediaHandlers(pc, isVideo);
 
-        const pendingCandidates = [];
-        pc.onicecandidate = (event) => {
-            if (!event.candidate) return;
-            const c = { candidate: event.candidate.candidate, sdpMid: event.candidate.sdpMid, sdpMLineIndex: event.candidate.sdpMLineIndex };
-            if (window.currentCallDocId) {
-                db.collection("calls").doc(window.currentCallDocId).update({ callerCandidates: FieldValue.arrayUnion(c) }).catch(() => {});
-            } else {
-                pendingCandidates.push(c); // l'ICE peut démarrer avant que le document existe
-            }
-        };
-
-        // L'offre est créée AVANT d'écrire le document, pour l'inclure dans la même écriture
-        // (évite une fenêtre où le destinataire verrait un appel « entrant » sans offre encore présente).
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
-        const callDoc = await db.collection("calls").add({
+        // Création d'un nouveau document d'appel dans RTDB
+        const callRef = rtdb.ref("calls").push();
+        const callId = callRef.key;
+        window.currentCallDocId = callId;
+
+        // ICE candidates : écrits directement dans le nœud du doc d'appel
+        pc.onicecandidate = (event) => {
+            if (!event.candidate) return;
+            callRef.child("callerCandidates").push({
+                candidate: event.candidate.candidate,
+                sdpMid: event.candidate.sdpMid,
+                sdpMLineIndex: event.candidate.sdpMLineIndex
+            });
+        };
+
+        await callRef.set({
             callerId: currentUser.uid,
             callerName: currentUser.displayName || currentUser.email?.split("@")[0] || "Un contact",
             receiverId: targetUserId,
-            isVideo,
+            isVideo: isVideo,
             status: "calling",
-            timestamp: FieldValue.serverTimestamp(),
-            offer: { type: offer.type, sdp: offer.sdp },
-            callerCandidates: []
+            timestamp: Date.now(),
+            offer: { type: offer.type, sdp: offer.sdp }
         });
-        window.currentCallDocId = callDoc.id;
-        if (pendingCandidates.length) {
-            await callDoc.update({ callerCandidates: FieldValue.arrayUnion(...pendingCandidates) });
-        }
 
-        unsubscribeCallDoc = callDoc.onSnapshot(async (snap) => {
-            const data = snap.data();
+        // Écoute des changements sur le doc d'appel (answer + status)
+        const onValue = async (snap) => {
+            const data = snap.val();
             if (!data) return;
             if (data.answer && !pc.currentRemoteDescription) {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
             }
-            await applyNewCandidates(pc, data.receiverCandidates, "receiver");
             if (data.status === "ended") endCallUI();
-        }, (err) => console.error("Erreur suivi de l'appel :", err));
+        };
+        callRef.on("value", onValue, (err) => console.error("Erreur suivi de l'appel :", err));
 
-        // Personne ne répond après 30s : on raccroche proprement.
+        // Écoute des candidats ICE du receiver
+        const onRemoteCandidate = (childSnap) => {
+            const c = childSnap.val();
+            if (!c) return;
+            pc.addIceCandidate(new RTCIceCandidate(c)).catch((e) => console.warn("Candidat ICE ignoré :", e));
+        };
+        callRef.child("receiverCandidates").on("child_added", onRemoteCandidate);
+
+        unsubscribeCallDoc = () => {
+            callRef.off("value", onValue);
+            callRef.child("receiverCandidates").off("child_added", onRemoteCandidate);
+        };
+
+        // Personne ne répond après 30 s : on raccroche proprement
         setTimeout(() => {
-            if (window.currentCallDocId === callDoc.id && pc.connectionState !== "connected") endCall();
+            if (window.currentCallDocId === callId && pc.connectionState !== "connected") endCall();
         }, 30000);
 
     } catch (err) {
@@ -3699,32 +3697,50 @@ async function acceptCall() {
 
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         currentPeerConnection = pc;
-        appliedCandidateCounts = { caller: 0, receiver: 0 };
         localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
         attachMediaHandlers(pc, isVideo);
 
-        const callDoc = db.collection("calls").doc(incomingCallId);
+        const callRef = rtdb.ref("calls").child(incomingCallId);
+
         pc.onicecandidate = (event) => {
             if (!event.candidate) return;
-            const c = { candidate: event.candidate.candidate, sdpMid: event.candidate.sdpMid, sdpMLineIndex: event.candidate.sdpMLineIndex };
-            callDoc.update({ receiverCandidates: FieldValue.arrayUnion(c) }).catch(() => {});
+            callRef.child("receiverCandidates").push({
+                candidate: event.candidate.candidate,
+                sdpMid: event.candidate.sdpMid,
+                sdpMLineIndex: event.candidate.sdpMLineIndex
+            });
         };
 
         await pc.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
-        // Les candidats ICE de l'appelant déjà présents à ce stade (il a pu en écrire avant notre réponse)
-        await applyNewCandidates(pc, incomingCallData.callerCandidates, "caller");
+
+        // Écoute des candidats ICE du caller
+        const onRemoteCandidate = (childSnap) => {
+            const c = childSnap.val();
+            if (!c) return;
+            pc.addIceCandidate(new RTCIceCandidate(c)).catch((e) => console.warn("Candidat ICE ignoré :", e));
+        };
+        callRef.child("callerCandidates").on("child_added", onRemoteCandidate);
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        await callDoc.update({ answer: { type: answer.type, sdp: answer.sdp }, status: "accepted", receiverCandidates: [] });
+        await callRef.update({
+            answer: { type: answer.type, sdp: answer.sdp },
+            status: "accepted"
+        });
 
         window.currentCallDocId = incomingCallId;
-        unsubscribeCallDoc = callDoc.onSnapshot(async (snap) => {
-            const data = snap.data();
+
+        const onValue = async (snap) => {
+            const data = snap.val();
             if (!data) return;
-            await applyNewCandidates(pc, data.callerCandidates, "caller");
             if (data.status === "ended") endCallUI();
-        }, (err) => console.error("Erreur suivi de l'appel :", err));
+        };
+        callRef.on("value", onValue, (err) => console.error("Erreur suivi de l'appel :", err));
+
+        unsubscribeCallDoc = () => {
+            callRef.off("value", onValue);
+            callRef.child("callerCandidates").off("child_added", onRemoteCandidate);
+        };
 
     } catch (err) {
         console.error("Erreur acceptation appel :", err);
@@ -3746,7 +3762,6 @@ function endCallUI() {
     }
     incomingCallId = null;
     incomingCallData = null;
-    appliedCandidateCounts = { caller: 0, receiver: 0 };
 
     const callModal = document.getElementById("callModal");
     if (callModal) callModal.style.display = "none";
@@ -3765,8 +3780,8 @@ async function endCall() {
     const docId = window.currentCallDocId || incomingCallId;
     endCallUI();
     if (docId) {
-        try { await db.collection("calls").doc(docId).update({ status: "ended" }); }
-        catch (e) { console.warn("Erreur fermeture appel Firestore :", e); }
+        try { await rtdb.ref("calls").child(docId).update({ status: "ended" }); }
+        catch (e) { console.warn("Erreur fermeture appel RTDB :", e); }
     }
     window.currentCallDocId = null;
 }
