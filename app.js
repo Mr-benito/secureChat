@@ -3607,51 +3607,65 @@ async function startCall(targetUserId, isVideo = false) {
             if (localVideo) localVideo.srcObject = localStream;
         }
 
+        // 1. Réf RTDB d'abord (pour pouvoir y écrire les candidats ICE dès qu'ils arrivent)
+        const callRef = rtdb.ref("calls").push();
+        const callId = callRef.key;
+        window.currentCallDocId = callId;
+
+        // 2. Créer la PeerConnection
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         currentPeerConnection = pc;
         localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
         attachMediaHandlers(pc, isVideo);
 
-        // 1. Créer la réf RTDB D'ABORD
-const callRef = rtdb.ref("calls").push();
-window.currentCallDocId = callRef.key;
+        // 3. onicecandidate AVANT setLocalDescription (sinon les premiers candidats sont perdus)
+        pc.onicecandidate = (event) => {
+            if (!event.candidate) return;
+            callRef.child("callerCandidates").push({
+                candidate: event.candidate.candidate,
+                sdpMid: event.candidate.sdpMid,
+                sdpMLineIndex: event.candidate.sdpMLineIndex
+            });
+        };
 
-// 2. Créer PC + tracks
-const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-currentPeerConnection = pc;
-localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
-attachMediaHandlers(pc, isVideo);
+        // 4. Offer + setLocalDescription
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
 
-// 3. Attacher onicecandidate AVANT setLocalDescription
-pc.onicecandidate = (event) => {
-    if (!event.candidate) return;
-    callRef.child("callerCandidates").push({
-        candidate: event.candidate.candidate,
-        sdpMid: event.candidate.sdpMid,
-        sdpMLineIndex: event.candidate.sdpMLineIndex
-    });
-};
+        // 5. Écrire les infos principales avec update() (set() écraserait les candidats déjà écrits)
+        await callRef.update({
+            callerId: currentUser.uid,
+            callerName: currentUser.displayName || currentUser.email?.split("@")[0] || "Un contact",
+            receiverId: targetUserId,
+            isVideo: isVideo,
+            status: "calling",
+            timestamp: Date.now(),
+            offer: { type: offer.type, sdp: offer.sdp }
+        });
 
-// 4. Offer + setLocalDescription
-const offer = await pc.createOffer();
-await pc.setLocalDescription(offer);
+        // 6. Listener : réponse du destinataire + statut
+        const onValue = async (snap) => {
+            const data = snap.val();
+            if (!data) return;
+            if (data.answer && !pc.currentRemoteDescription) {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            }
+            if (data.status === "ended") endCallUI();
+        };
+        callRef.on("value", onValue, (err) => console.error("Erreur suivi de l'appel :", err));
 
-// 5. Écrire les données principales avec update() (pas set !)
-await callRef.update({
-    callerId: currentUser.uid,
-    callerName: currentUser.displayName || currentUser.email?.split("@")[0] || "Un contact",
-    receiverId: targetUserId,
-    isVideo: isVideo,
-    status: "calling",
-    timestamp: Date.now(),
-    offer: { type: offer.type, sdp: offer.sdp }
-});
+        // 7. Listener : candidats ICE du destinataire
+        const onRemoteCandidate = (childSnap) => {
+            const c = childSnap.val();
+            if (!c) return;
+            pc.addIceCandidate(new RTCIceCandidate(c)).catch((e) => console.warn("Candidat ICE ignoré :", e));
+        };
+        callRef.child("receiverCandidates").on("child_added", onRemoteCandidate);
 
-// 6. Attacher les listeners answer/candidats distants
-const onValue = async (snap) => { ... };
-callRef.on("value", onValue, ...);
-callRef.child("receiverCandidates").on("child_added", onRemoteCandidate);
-unsubscribeCallDoc = () => { ... };
+        unsubscribeCallDoc = () => {
+            callRef.off("value", onValue);
+            callRef.child("receiverCandidates").off("child_added", onRemoteCandidate);
+        };
 
         // Personne ne répond après 30 s : on raccroche proprement
         setTimeout(() => {
@@ -3664,120 +3678,3 @@ unsubscribeCallDoc = () => { ... };
         endCallUI();
     }
 }
-
-// ---------- Accepter un appel entrant ----------
-async function acceptCall() {
-    if (!incomingCallId || !incomingCallData || !incomingCallData.offer) return;
-
-    try {
-        const isVideo = incomingCallData.isVideo;
-        localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
-
-        const callStatus = document.getElementById("callStatus");
-        const videoContainer = document.getElementById("videoContainer");
-        const acceptBtn = document.getElementById("acceptCallBtn");
-        if (callStatus) callStatus.textContent = "En communication...";
-        if (acceptBtn) acceptBtn.style.display = "none";
-        if (isVideo && videoContainer) {
-            videoContainer.style.display = "block";
-            const localVideo = document.getElementById("localVideo");
-            if (localVideo) localVideo.srcObject = localStream;
-        }
-
-        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-        currentPeerConnection = pc;
-        localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
-        attachMediaHandlers(pc, isVideo);
-
-        const callRef = rtdb.ref("calls").child(incomingCallId);
-
-        pc.onicecandidate = (event) => {
-            if (!event.candidate) return;
-            callRef.child("receiverCandidates").push({
-                candidate: event.candidate.candidate,
-                sdpMid: event.candidate.sdpMid,
-                sdpMLineIndex: event.candidate.sdpMLineIndex
-            });
-        };
-
-        await pc.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
-
-        // Écoute des candidats ICE du caller
-        const onRemoteCandidate = (childSnap) => {
-            const c = childSnap.val();
-            if (!c) return;
-            pc.addIceCandidate(new RTCIceCandidate(c)).catch((e) => console.warn("Candidat ICE ignoré :", e));
-        };
-        callRef.child("callerCandidates").on("child_added", onRemoteCandidate);
-
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await callRef.update({
-            answer: { type: answer.type, sdp: answer.sdp },
-            status: "accepted"
-        });
-
-        window.currentCallDocId = incomingCallId;
-
-        const onValue = async (snap) => {
-            const data = snap.val();
-            if (!data) return;
-            if (data.status === "ended") endCallUI();
-        };
-        callRef.on("value", onValue, (err) => console.error("Erreur suivi de l'appel :", err));
-
-        unsubscribeCallDoc = () => {
-            callRef.off("value", onValue);
-            callRef.child("callerCandidates").off("child_added", onRemoteCandidate);
-        };
-
-    } catch (err) {
-        console.error("Erreur acceptation appel :", err);
-        alert("Impossible d'accéder au micro ou à la caméra.");
-        endCall();
-    }
-}
-
-// ---------- Fin d'appel ----------
-function endCallUI() {
-    if (currentPeerConnection) {
-        currentPeerConnection.close();
-        currentPeerConnection = null;
-    }
-    if (unsubscribeCallDoc) { unsubscribeCallDoc(); unsubscribeCallDoc = null; }
-    if (localStream) {
-        localStream.getTracks().forEach((track) => track.stop());
-        localStream = null;
-    }
-    incomingCallId = null;
-    incomingCallData = null;
-
-    const callModal = document.getElementById("callModal");
-    if (callModal) callModal.style.display = "none";
-    const videoContainer = document.getElementById("videoContainer");
-    if (videoContainer) videoContainer.style.display = "none";
-
-    const localVideo = document.getElementById("localVideo");
-    const remoteVideo = document.getElementById("remoteVideo");
-    const remoteAudio = document.getElementById("remoteAudio");
-    if (localVideo) localVideo.srcObject = null;
-    if (remoteVideo) remoteVideo.srcObject = null;
-    if (remoteAudio) remoteAudio.srcObject = null;
-}
-
-async function endCall() {
-    const docId = window.currentCallDocId || incomingCallId;
-    endCallUI();
-    if (docId) {
-        try { await rtdb.ref("calls").child(docId).update({ status: "ended" }); }
-        catch (e) { console.warn("Erreur fermeture appel RTDB :", e); }
-    }
-    window.currentCallDocId = null;
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-    const acceptCallBtn = document.getElementById("acceptCallBtn");
-    const endCallBtn = document.getElementById("endCallBtn");
-    if (acceptCallBtn) acceptCallBtn.addEventListener("click", acceptCall);
-    if (endCallBtn) endCallBtn.addEventListener("click", endCall);
-});
