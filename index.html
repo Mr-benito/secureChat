@@ -3,7 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SecureChat - Dashboard</title>
+    <title>Doomi - Dashboard</title>
+    <link rel="icon" href="assets/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+    <link rel="manifest" href="assets/manifest.json">
+    <meta name="theme-color" content="#050510">
+    <meta name="apple-mobile-web-app-title" content="Doomi">
+    <meta name="description" content="Doomi : Connecte-toi. Partage. En toute sécurité.">
+    <meta property="og:title" content="Doomi">
+    <meta property="og:description" content="Connecte-toi. Partage. En toute sécurité.">
+    <meta property="og:image" content="assets/doomi-og.png">
     <!-- CDN PeerJS pour gérer WebRTC facilement -->
     <!-- CDN Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -18,10 +28,10 @@
         <aside class="sidebar">
 
             <div class="sidebar-brand">
-                <div class="small-logo">
-                    <i class="fa-solid fa-lock"></i>
+                <div class="small-logo" style="background: transparent;">
+                    <img src="assets/doomi-logo-128.png" alt="Doomi" style="width: 100%; height: 100%; object-fit: contain;">
                 </div>
-                <h2>Secure<span>Chat</span></h2>
+                <h2>Doo<span>mi</span></h2>
             </div>
 
             <nav class="sidebar-menu">
@@ -89,8 +99,8 @@
         <!-- 3. COLONNE DROITE : ZONE DE CHAT -->
         <section class="chat-area tab-view tab-conversations">
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 20px; background-color: #f8fafc;">
-                <img src="" alt="SecureChat" style="max-width: 350px; width: 100%; height: auto; margin-bottom: 20px; object-fit: contain;">
-                <h2 style="font-size: 20px; color: #1e293b; margin-bottom: 8px;">Bienvenue sur SecureChat</h2>
+                <img src="assets/doomi-logo.png" alt="Doomi" style="max-width: 150px; width: 100%; height: auto; margin-bottom: 20px; object-fit: contain;">
+                <h2 style="font-size: 20px; color: #1e293b; margin-bottom: 8px;">Bienvenue sur Doomi</h2>
                 <p style="font-size: 13px; color: #64748b; max-width: 320px;">
                     Sélectionnez un contact dans la liste à gauche pour lancer la conversation. 
                 </p>
@@ -172,7 +182,6 @@
     <!-- SDKs Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
      
     <!-- Module de chiffrement E2EE -->
