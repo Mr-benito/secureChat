@@ -2,6 +2,7 @@
 const firebaseConfig = {
   apiKey: "AIzaSyAWQk-ggRbQbseTNJFQccVjAPpeWP5eD1I",
   authDomain: "chat-80cef.firebaseapp.com",
+  databaseURL: "https://chat-80cef-default-rtdb.firebaseio.com",
   projectId: "chat-80cef",
   storageBucket: "chat-80cef.firebasestorage.app",
   messagingSenderId: "275397956073",
@@ -13,8 +14,8 @@ if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 const auth = firebase.auth();
-// Firestore n'est pas forcément chargé sur la page de connexion : on protège l'accès
-const db = typeof firebase.firestore === "function" ? firebase.firestore() : null;
+// Realtime Database : on protège l'accès au cas où le SDK ne serait pas chargé sur la page
+const rtdb = typeof firebase.database === "function" ? firebase.database() : null;
 
 // Messages d'erreur lisibles
 function friendlyAuthError(error) {
@@ -89,7 +90,7 @@ function setLoadingState(isLoading) {
     }
 }
 
-// Remplace le bloc de connexion (loginForm.addEventListener) par :
+// Bloc de connexion
 if (loginForm) {
     loginForm.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -114,12 +115,15 @@ if (loginForm) {
             try {
                 const existingLocalKey = localStorage.getItem(`e2ee_private_${user.uid}`);
 
-                if (!existingLocalKey && db && typeof E2EE !== "undefined" && E2EE.importEncryptedPrivateKey) {
-                    const userDoc = await db.collection("users").doc(user.uid).get();
-                    if (userDoc.exists && userDoc.data().encryptedPrivateKey) {
+                if (!existingLocalKey && rtdb && typeof E2EE !== "undefined" && E2EE.importEncryptedPrivateKey) {
+                    // On ne lit QUE le champ nécessaire (pas tout le profil)
+                    const snap = await rtdb.ref(`userKeys/${user.uid}/encryptedPrivateKey`).once("value");
+                    const encryptedPrivateKey = snap.val();
+
+                    if (encryptedPrivateKey) {
                         // Déchiffrement avec le mot de passe saisi
                         const restoredPrivateKey = await E2EE.importEncryptedPrivateKey(
-                            userDoc.data().encryptedPrivateKey,
+                            encryptedPrivateKey,
                             password
                         );
                         if (restoredPrivateKey) {

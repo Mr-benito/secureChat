@@ -1,0 +1,73 @@
+{
+  "rules": {
+    "users": {
+      ".read": "auth != null",
+      "$uid": { ".write": "auth != null && auth.uid === $uid" }
+    },
+    "userKeys": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "presence": {
+      ".read": "auth != null",
+      "$uid": { ".write": "auth != null && auth.uid === $uid" }
+    },
+    "blocks": {
+      ".indexOn": ["blockerId", "blockedId"],
+      ".read": "auth != null && ((query.orderByChild == 'blockerId' && query.equalTo == auth.uid) || (query.orderByChild == 'blockedId' && query.equalTo == auth.uid))",
+      "$key": {
+        ".write": "auth != null && ((newData.exists() && newData.child('blockerId').val() === auth.uid) || (!newData.exists() && data.child('blockerId').val() === auth.uid))"
+      }
+    },
+    "chats": {
+      "$chatId": {
+        ".read": "auth != null && $chatId.contains(auth.uid)",
+        ".write": "auth != null && $chatId.contains(auth.uid)"
+      }
+    },
+    "chatMessages": {
+      "$chatId": {
+        ".indexOn": ["timestamp"],
+        ".read": "auth != null && $chatId.contains(auth.uid)",
+        ".write": "auth != null && $chatId.contains(auth.uid)"
+      }
+    },
+    "groups": {
+      "$groupId": {
+        ".read": "auth != null && data.child('members').child(auth.uid).exists()",
+        ".write": "auth != null && ((!data.exists() && newData.child('createdBy').val() === auth.uid) || data.child('members').child(auth.uid).exists())"
+      }
+    },
+    "userGroups": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$groupId": {
+          ".write": "auth != null && (auth.uid === $uid || root.child('groups').child($groupId).child('members').child(auth.uid).exists() || newData.parent().parent().parent().child('groups').child($groupId).child('createdBy').val() === auth.uid)"
+        }
+      }
+    },
+    "groupMessages": {
+      "$groupId": {
+        ".indexOn": ["timestamp"],
+        ".read": "auth != null && root.child('groups').child($groupId).child('members').child(auth.uid).exists() && (!root.child('groups').child($groupId).child('historyFrom').child(auth.uid).exists() || (query.orderByChild == 'timestamp' && query.startAt >= root.child('groups').child($groupId).child('historyFrom').child(auth.uid).val()))",
+        "$msgId": {
+          ".write": "auth != null && root.child('groups').child($groupId).child('members').child(auth.uid).exists() && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
+          "deletedFor": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && root.child('groups').child($groupId).child('members').child(auth.uid).exists()"
+            }
+          }
+        }
+      }
+    },
+    "favorites": {
+      ".indexOn": ["ownerId"],
+      ".read": "auth != null && query.orderByChild == 'ownerId' && query.equalTo == auth.uid",
+      "$key": {
+        ".write": "auth != null && ((newData.exists() && newData.child('ownerId').val() === auth.uid) || (!newData.exists() && data.child('ownerId').val() === auth.uid))"
+      }
+    }
+  }
+}

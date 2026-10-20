@@ -1,5 +1,5 @@
 /* =============================================================================
-   app-2.js — Messagerie (Firebase Auth + Firestore + E2EE + PeerJS)
+   app-2.js — Messagerie (Firebase Auth + Realtime Database + E2EE + PeerJS)
    =============================================================================
    Corrections & nouveautés
    - Liste des contacts / conversations : chargement corrigé (loadContacts manquant, variable « first » absente)
@@ -14,12 +14,17 @@
    - Recherche par nom d'utilisateur
    - Code QR personnel + scanner (onglet Appareils) + lien direct ?add=<uid>
 
-   Structure Firestore utilisée
-   - users/{uid}                          profil, clés E2EE, status/lastSeen (transitions)
-   - presence/{uid}                       status/lastSeen (battement de cœur, lu seulement par le correspondant)
-   - blocks/{blockerUid}_{blockedUid}     blocages
-   - chats/{uidA_uidB}                    compteurs unreadCount_<uid>
-   - chats/{uidA_uidB}/messages/{id}      messages (status, edited, deletedFor, suppressed…)
+   Structure Realtime Database utilisée
+   - users/{uid}                          profil public (username, email, publicKey, status, lastSeen, badges)
+   - userKeys/{uid}                       clé privée chiffrée (lisible uniquement par son propriétaire)
+   - presence/{uid}                       status/lastSeen (battement de cœur)
+   - blocks/{blockerUid}_{blockedUid}     blocages (blockerId, blockedId, createdAtMs)
+   - chats/{uidA_uidB}                    unreadCount_<uid>, lastSenderId, timestamp
+   - chatMessages/{uidA_uidB}/{msgId}     messages (iv, cipherText, keys, status, edited, deletedFor, suppressed…)
+   - groups/{groupId}                     name, members{uid:true}, createdBy, groupKeys, historyFrom
+   - userGroups/{uid}/{groupId}           index des groupes d'un utilisateur (remplace array-contains)
+   - groupMessages/{groupId}/{msgId}      messages de groupe (senderId, senderName, iv, cipherText, timestamp)
+   - favorites/{ownerUid}_{targetId}      ownerId, targetId, targetType
    - calls/{id}                           appels
    ============================================================================= */
 
@@ -29,6 +34,7 @@
 const firebaseConfig = {
     apiKey: "AIzaSyAWQk-ggRbQbseTNJFQccVjAPpeWP5eD1I",
     authDomain: "chat-80cef.firebaseapp.com",
+    databaseURL: "https://chat-80cef-default-rtdb.firebaseio.com",
     projectId: "chat-80cef",
     storageBucket: "chat-80cef.firebasestorage.app",
     messagingSenderId: "275397956073",
@@ -49,9 +55,132 @@ if (!firebase.apps.length) {
 }
 
 const auth = firebase.auth();
-const db = firebase.firestore();
-const rtdb = firebase.database();   //  NOUVEAU : pour les appels
-const FieldValue = firebase.firestore.FieldValue;
+const rtdb = firebase.database();   // Realtime Database : toutes les données (profils, messages, groupes, appels)
+
+// ============================================================================
+// 1bis. COUCHE D'ACCÈS REALTIME DATABASE
+// Fournit des « snapshots » (docs, docChanges, metadata) construits à partir des événements
+// child_added / child_changed / child_removed de RTDB, pour que le code d'interface existant
+// (handleLastMessages, renderMessages, etc.) continue de fonctionner sans modification.
+// ============================================================================
+const RTDB_TS = firebase.database.ServerValue.TIMESTAMP;
+const rtdbPendingKeys = new Set();   // messages écrits localement, pas encore confirmés par le serveur
+const rtdbReemit = new Set();        // callbacks de ré-émission (met à jour l'icône « envoi en cours »)
+
+// Chemin (relatif à la racine) d'une référence RTDB
+function rtdbPathOf(ref) {
+    return decodeURIComponent(ref.toString().substring(rtdb.ref().toString().length));
+}
+
+// RTDB ne stocke pas de tableaux : deletedFor est stocké sous forme { uid: true } et relu en tableau
+function rtdbNormalize(val) {
+    const v = { ...(val || {}) };
+    if (v.deletedFor && !Array.isArray(v.deletedFor)) v.deletedFor = Object.keys(v.deletedFor);
+    return v;
+}
+
+function rtdbMakeDoc(snap) {
+    const val = rtdbNormalize(snap.val());
+    const key = snap.key;
+    return {
+        id: key,
+        ref: snap.ref,
+        exists: true,
+        data: () => ({ ...val }),
+        metadata: { get hasPendingWrites() { return rtdbPendingKeys.has(key); } }
+    };
+}
+
+// Les 20 derniers messages d'une liste (optionnellement à partir d'une date : fenêtre d'historique d'un groupe)
+function rtdbLastMessagesQuery(path, startAtMs) {
+    let q = rtdb.ref(path).orderByChild("timestamp");
+    if (startAtMs) q = q.startAt(startAtMs);
+    return q.limitToLast(20);
+}
+
+// Écoute une requête RTDB et appelle onSnapshot({ docs, docChanges(), size, empty, forEach }).
+// Les événements arrivés dans le même cycle sont regroupés ; le 1er snapshot est émis une fois
+// le chargement initial terminé. Retourne la fonction de désabonnement.
+function rtdbListenQuery(query, opts, onSnapshot, onError) {
+    const desc = !!(opts && opts.desc);
+    const items = new Map();
+    let changes = [];
+    let ready = false;
+    let dirty = false;
+    let scheduled = false;
+    let failed = false;
+
+    const emit = () => {
+        scheduled = false;
+        if (!ready || !dirty) return;
+        dirty = false;
+        const docs = [...items.values()].sort((a, b) => {
+            const ta = a.data().timestamp, tb = b.data().timestamp;
+            const na = typeof ta === "number" ? ta : Number.MAX_SAFE_INTEGER;
+            const nb = typeof tb === "number" ? tb : Number.MAX_SAFE_INTEGER;
+            return (na - nb) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+        });
+        if (desc) docs.reverse();
+        const ch = changes;
+        changes = [];
+        onSnapshot({
+            docs,
+            size: docs.length,
+            empty: docs.length === 0,
+            docChanges: () => ch,
+            forEach: (cb) => docs.forEach(cb)
+        });
+    };
+    const schedule = () => {
+        dirty = true;
+        if (scheduled) return;
+        scheduled = true;
+        Promise.resolve().then(emit);
+    };
+
+    const onAdded = (s) => { const d = rtdbMakeDoc(s); items.set(s.key, d); changes.push({ type: "added", doc: d }); schedule(); };
+    const onChanged = (s) => { const d = rtdbMakeDoc(s); items.set(s.key, d); changes.push({ type: "modified", doc: d }); schedule(); };
+    const onRemoved = (s) => {
+        const d = items.get(s.key) || rtdbMakeDoc(s);
+        items.delete(s.key);
+        changes.push({ type: "removed", doc: d });
+        schedule();
+    };
+    const onValue = () => {
+        if (ready) return;
+        ready = true;
+        query.off("value", onValue);
+        dirty = true;
+        emit();
+    };
+    const fail = (err) => { if (failed) return; failed = true; if (onError) onError(err); };
+    const reemit = () => { if (ready) schedule(); };   // ex. : un envoi vient d'être confirmé par le serveur
+
+    query.on("child_added", onAdded, fail);
+    query.on("child_changed", onChanged, fail);
+    query.on("child_removed", onRemoved, fail);
+    query.on("value", onValue, fail);
+    rtdbReemit.add(reemit);
+
+    return () => {
+        query.off("child_added", onAdded);
+        query.off("child_changed", onChanged);
+        query.off("child_removed", onRemoved);
+        query.off("value", onValue);
+        rtdbReemit.delete(reemit);
+    };
+}
+
+// Ajoute un message dans une liste (équivalent de .add()) en suivant son état « envoi en cours »
+function rtdbPushMessage(listRef, data) {
+    const ref = listRef.push();
+    const key = ref.key;
+    rtdbPendingKeys.add(key);
+    return ref.set(data).then(() => key).finally(() => {
+        rtdbPendingKeys.delete(key);
+        rtdbReemit.forEach((fn) => fn());
+    });
+}
 
 // ============================================================================
 // 2. CONSTANTES & ÉTAT GLOBAL
@@ -562,7 +691,11 @@ if (window.matchMedia) {
 
 const pad = (n) => String(n).padStart(2, "0");
 const timeOf = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-const toDate = (ts) => (ts && typeof ts.toDate === "function" ? ts.toDate() : ts instanceof Date ? ts : null);
+const toDate = (ts) => {
+    if (typeof ts === "number") return new Date(ts);   // Realtime Database : millisecondes
+    if (ts && typeof ts.toDate === "function") return ts.toDate();
+    return ts instanceof Date ? ts : null;
+};
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const dayDiff = (d, now = new Date()) => Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -886,18 +1019,20 @@ function notifyNewMessage(user, text, count = 1) {
 // 6. PRÉSENCE : en ligne / dernière connexion
 // ============================================================================
 function writePresence(userId, status) {
-    return db.collection("presence").doc(userId)
-        .set({ status, lastSeen: FieldValue.serverTimestamp() }, { merge: true })
+    return rtdb.ref(`presence/${userId}`)
+        .update({ status, lastSeen: RTDB_TS })
         .catch(console.error);
 }
 
 // Transitions (connexion / déconnexion) : on écrit aussi dans users/{uid}
 function updateUserPresence(userId, status) {
     if (!userId) return Promise.resolve();
-    const userWrite = db.collection("users").doc(userId)
-        .set({ status, lastSeen: FieldValue.serverTimestamp() }, { merge: true })
-        .catch(console.error);
-    return Promise.all([userWrite, writePresence(userId, status)]);
+    return rtdb.ref().update({
+        [`users/${userId}/status`]: status,
+        [`users/${userId}/lastSeen`]: RTDB_TS,
+        [`presence/${userId}/status`]: status,
+        [`presence/${userId}/lastSeen`]: RTDB_TS
+    }).catch(console.error);
 }
 
 function startPresence(userId) {
@@ -910,6 +1045,15 @@ function startPresence(userId) {
 
     if (presenceBound) return;
     presenceBound = true;
+
+    // Hors ligne automatique côté serveur si la connexion est coupée (fermeture brutale, perte réseau mobile…)
+    rtdb.ref(".info/connected").on("value", (snap) => {
+        if (snap.val() !== true || !currentUser) return;
+        const id = currentUser.uid;
+        const offline = { status: "offline", lastSeen: RTDB_TS };
+        rtdb.ref(`users/${id}`).onDisconnect().update(offline).catch(console.error);
+        rtdb.ref(`presence/${id}`).onDisconnect().update(offline).catch(console.error);
+    });
     const goOffline = () => { if (currentUser) updateUserPresence(currentUser.uid, "offline"); };
     window.addEventListener("beforeunload", goOffline);
     window.addEventListener("pagehide", goOffline);
@@ -969,18 +1113,36 @@ function renderPeerStatus() {
 // ============================================================================
 function listenBlocks(uid) {
     unsubscribeBlocks.forEach((fn) => fn());
+
+    const byMeQuery = rtdb.ref("blocks").orderByChild("blockerId").equalTo(uid);
+    const meQuery = rtdb.ref("blocks").orderByChild("blockedId").equalTo(uid);
+
+    const onByMe = (snap) => {
+        const map = new Map();
+        // Attention : un callback de forEach() qui renvoie true stoppe la boucle, d'où les accolades
+        snap.forEach((child) => {
+            const b = child.val() || {};
+            map.set(b.blockedId, b.createdAtMs || 0);
+        });
+        blockedByMe = map;
+        onBlocksChanged();
+    };
+    const onMe = (snap) => {
+        const set = new Set();
+        snap.forEach((child) => {
+            const b = child.val() || {};
+            set.add(b.blockerId);
+        });
+        blockedMe = set;
+        onBlocksChanged();
+    };
+
+    byMeQuery.on("value", onByMe, (err) => console.warn("Blocages (envoyés) :", err));
+    meQuery.on("value", onMe, (err) => console.warn("Blocages (reçus) :", err));
+
     unsubscribeBlocks = [
-        db.collection("blocks").where("blockerId", "==", uid).onSnapshot((snap) => {
-            blockedByMe = new Map(snap.docs.map((d) => {
-                const b = d.data();
-                return [b.blockedId, b.createdAtMs || 0];
-            }));
-            onBlocksChanged();
-        }, (err) => console.warn("Blocages (envoyés) :", err)),
-        db.collection("blocks").where("blockedId", "==", uid).onSnapshot((snap) => {
-            blockedMe = new Set(snap.docs.map((d) => d.data().blockerId));
-            onBlocksChanged();
-        }, (err) => console.warn("Blocages (reçus) :", err))
+        () => byMeQuery.off("value", onByMe),
+        () => meQuery.off("value", onMe)
     ];
 }
 
@@ -997,10 +1159,9 @@ function onBlocksChanged() {
 
 async function blockUser(uid) {
     try {
-        await db.collection("blocks").doc(`${currentUser.uid}_${uid}`).set({
+        await rtdb.ref(`blocks/${currentUser.uid}_${uid}`).set({
             blockerId: currentUser.uid,
             blockedId: uid,
-            createdAt: FieldValue.serverTimestamp(),
             createdAtMs: Date.now()
         });
         showToast("Contact bloqué", "Vous ne recevrez plus ses messages ni ses appels.");
@@ -1012,7 +1173,7 @@ async function blockUser(uid) {
 
 async function unblockUser(uid) {
     try {
-        await db.collection("blocks").doc(`${currentUser.uid}_${uid}`).delete();
+        await rtdb.ref(`blocks/${currentUser.uid}_${uid}`).remove();
         showToast("Contact débloqué");
     } catch (err) {
         console.error("Erreur de déblocage :", err);
@@ -1057,8 +1218,8 @@ function getMyPrivateKey() {
 
 async function getPublicKey(uid) {
     if (publicKeyCache.has(uid)) return publicKeyCache.get(uid);
-    const doc = await db.collection("users").doc(uid).get();
-    const pk = doc.data()?.publicKey;
+    const pkSnap = await rtdb.ref(`users/${uid}/publicKey`).once("value");
+    const pk = pkSnap.val();
     if (pk) publicKeyCache.set(uid, pk);
     return pk;
 }
@@ -1127,11 +1288,10 @@ async function initUserKeys(user) {
             return localKey;
         }
 
-        // 2 Si absente (ex: première ouverture sans repasser par login), on charge Firestore
-        const userDocRef = db.collection("users").doc(user.uid);
-        const doc = await userDocRef.get();
+        // 2 Si absente (ex: première ouverture sans repasser par login), on consulte Realtime Database
+        const keySnap = await rtdb.ref(`userKeys/${user.uid}/encryptedPrivateKey`).once("value");
 
-        if (doc.exists && doc.data()?.encryptedPrivateKey) {
+        if (keySnap.exists()) {
             console.log("La clé privée locale est absente. Elle sera restaurée lors de la prochaine connexion avec mot de passe.");
         }
         
@@ -1207,12 +1367,12 @@ if (switchAccountBtn) switchAccountBtn.addEventListener("click", signOutAndRedir
 function loadUserProfile(user) {
     if (!user) return;
 
-    db.collection("users").doc(user.uid).get().then((doc) => {
+    rtdb.ref(`users/${user.uid}/username`).once("value").then((snap) => {
         let username = user.displayName || user.email?.split("@")[0] || "Utilisateur";
         const email = user.email || "";
 
-        if (doc.exists && doc.data().username) {
-            username = doc.data().username;
+        if (snap.exists() && snap.val()) {
+            username = snap.val();
         }
         myUsername = username;
 
@@ -1436,64 +1596,88 @@ function resetListsDom() {
     if (contacts) contacts.textContent = "";
 }
 
-// Écoute la collection « users » : alimente la liste des conversations ET l'onglet Contacts
+// Écoute la nœud « users » : alimente la liste des conversations ET l'onglet Contacts
 function loadContacts() {
     if (unsubscribeUsers) { unsubscribeUsers(); unsubscribeUsers = null; }
-    let first = true;
 
-    unsubscribeUsers = db.collection("users").onSnapshot((snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-            const uid = change.doc.id;
-            const userData = change.doc.data() || {};
+    const usersRef = rtdb.ref("users");
+    let ready = false; // passe à true quand le chargement initial est terminé
 
-            // Mon propre compte : mise à jour de la barre latérale uniquement
-            if (currentUser && uid === currentUser.uid) {
-                const myRealName = userData.username || currentUser.displayName || "Utilisateur";
-                usersById.set(uid, { ...userData, uid });
+    const afterChange = () => {
+        checkAndShowEmptyState();
+        applySearchFilter();
+        scheduleSort();
+    };
 
-                const sidebarName = qs(".sidebar-profile .profile-info h4");
-                if (sidebarName) sidebarName.textContent = myRealName;
-                const sidebarSub = qs(".sidebar-profile .profile-info p, .sidebar-profile .profile-email, #sidebarUserEmail");
-                if (sidebarSub) sidebarSub.innerHTML = '<span class="status-dot online"></span> En ligne';
-                const sidebarAvatar = qs(".sidebar-profile .profile-avatar");
-                if (sidebarAvatar) sidebarAvatar.textContent = initialsOf(myRealName);
-                return;
-            }
+    const handleUser = (snap, type) => {
+        const uid = snap.key;
+        const userData = snap.val() || {};
 
-            if (change.type === "removed") {
-                removeUser(uid);
-                return;
-            }
+        // Mon propre compte : mise à jour de la barre latérale uniquement
+        if (currentUser && uid === currentUser.uid) {
+            const myRealName = userData.username || currentUser.displayName || "Utilisateur";
+            usersById.set(uid, { ...userData, uid });
 
+            const sidebarName = qs(".sidebar-profile .profile-info h4");
+            if (sidebarName) sidebarName.textContent = myRealName;
+            const sidebarSub = qs(".sidebar-profile .profile-info p, .sidebar-profile .profile-email, #sidebarUserEmail");
+            if (sidebarSub) sidebarSub.innerHTML = '<span class="status-dot online"></span> En ligne';
+            const sidebarAvatar = qs(".sidebar-profile .profile-avatar");
+            if (sidebarAvatar) sidebarAvatar.textContent = initialsOf(myRealName);
+            return;
+        }
+
+        if (type === "removed") {
+            removeUser(uid);
+        } else {
             const user = { ...userData, uid };
             usersById.set(uid, user);
             if (user.publicKey) publicKeyCache.set(uid, user.publicKey);
 
-            if (change.type === "added") {
+            if (type === "added") {
                 addConversation(user);
                 addContactCard(user);
             } else {
                 updateUserEntry(user);
             }
-        });
-
-        checkAndShowEmptyState();
-        applySearchFilter();
-        scheduleSort();
-
-        if (first) {
-            first = false;
-            consumePendingChat();
         }
-    }, (err) => {
+        if (ready) afterChange();
+    };
+
+    const onAdded = (snap) => handleUser(snap, "added");
+    const onChanged = (snap) => handleUser(snap, "changed");
+    const onRemoved = (snap) => handleUser(snap, "removed");
+
+    // « value » est déclenché APRÈS tous les child_added initiaux : fin du chargement initial
+    const onFirstValue = () => {
+        usersRef.off("value", onFirstValue);
+        ready = true;
+        afterChange();
+        consumePendingChat();
+    };
+
+    const onError = (err) => {
         console.error("Erreur chargement des contacts :", err);
-        const message = err && err.code === "permission-denied"
-            ? "Accès refusé : vérifiez les règles Firestore de la collection « users »."
+        const denied = /permission[_-]?denied/i.test((err && (err.code || err.message)) || "");
+        const message = denied
+            ? "Accès refusé : vérifiez les règles Realtime Database du nœud « users »."
             : "Impossible de charger les contacts. Vérifiez votre connexion.";
         const c = getContactsContainer();
         if (c && c.children.length === 0) c.appendChild(mk("p", { class: "x-empty-users", text: message }));
         showToast("Contacts indisponibles", message);
-    });
+    };
+
+    usersRef.on("child_added", onAdded);
+    usersRef.on("child_changed", onChanged);
+    usersRef.on("child_removed", onRemoved);
+    usersRef.on("value", onFirstValue, onError);
+
+    unsubscribeUsers = () => {
+        usersRef.off("child_added", onAdded);
+        usersRef.off("child_changed", onChanged);
+        usersRef.off("child_removed", onRemoved);
+        usersRef.off("value", onFirstValue);
+    };
 }
 
 function checkAndShowEmptyState() {
@@ -1550,24 +1734,24 @@ function addConversation(user) {
         };
         convState.set(user.uid, state);
 
-        const chatRef = db.collection("chats").doc(chatId);
-
         state.unsubs.push(
-            chatRef.collection("messages").orderBy("timestamp", "desc").limit(20).onSnapshot(
+            rtdbListenQuery(
+                rtdbLastMessagesQuery(`chatMessages/${chatId}`), { desc: true },
                 (snap) => handleLastMessages(state, snap),
                 (err) => console.error("Erreur écoute messages :", err)
             )
         );
 
-        state.unsubs.push(
-            chatRef.onSnapshot((doc) => {
-                const key = `unreadCount_${currentUser.uid}`;
-                state.unread = Math.max(0, (doc.exists && doc.data() && doc.data()[key]) || 0);
-                if (state.unread > 0 && activeChatUserId === user.uid && isActiveChatVisible()) markActiveChatRead();
-                refreshConvUI(state);
-                updateTotalUnread();
-            }, (err) => console.error("Erreur écoute conversation :", err))
-        );
+        // Compteur de non lus : on n'écoute QUE la valeur qui me concerne (pas tout le document de chat)
+        const unreadRef = rtdb.ref(`chats/${chatId}/unreadCount_${currentUser.uid}`);
+        const onUnread = (snap) => {
+            state.unread = Math.max(0, Number(snap.val()) || 0);
+            if (state.unread > 0 && activeChatUserId === user.uid && isActiveChatVisible()) markActiveChatRead();
+            refreshConvUI(state);
+            updateTotalUnread();
+        };
+        unreadRef.on("value", onUnread, (err) => console.error("Erreur écoute conversation :", err));
+        state.unsubs.push(() => unreadRef.off("value", onUnread));
     } else {
         state.el = el;
         state.avatarEl = avatarEl;
@@ -1597,7 +1781,7 @@ async function handleLastMessages(state, snap, silent = false) {
     if (!silent && !(activeChatUserId === user.uid && isActiveChatVisible())) {
         const pairs = entries
             .filter((e) => e.msg.receiverId === me && e.msg.status === "sent" && !e.doc.metadata.hasPendingWrites)
-            .map((e) => [e.doc.ref, { status: "delivered", deliveredAt: FieldValue.serverTimestamp() }]);
+            .map((e) => [e.doc.ref, { status: "delivered", deliveredAt: RTDB_TS }]);
         if (pairs.length) batchUpdate(pairs);
     }
 
@@ -1738,23 +1922,25 @@ function isFavorite(targetId) { return favoritesSet.has(targetId); }
 
 function listenFavorites() {
     if (unsubscribeFavorites) { unsubscribeFavorites(); unsubscribeFavorites = null; }
-    unsubscribeFavorites = db.collection("favorites").where("ownerId", "==", currentUser.uid)
-        .onSnapshot((snap) => {
-            favoritesSet.clear();
-            snap.forEach((doc) => { const d = doc.data(); if (d && d.targetId) favoritesSet.add(d.targetId); });
-            updateFavoritesBadge();
-            renderFavoritesTab();
-        }, (err) => console.error("Erreur chargement des favoris :", err));
+    const favQuery = rtdb.ref("favorites").orderByChild("ownerId").equalTo(currentUser.uid);
+    const onFavs = (snap) => {
+        favoritesSet.clear();
+        snap.forEach((child) => { const d = child.val(); if (d && d.targetId) favoritesSet.add(d.targetId); });
+        updateFavoritesBadge();
+        renderFavoritesTab();
+    };
+    favQuery.on("value", onFavs, (err) => console.error("Erreur chargement des favoris :", err));
+    unsubscribeFavorites = () => favQuery.off("value", onFavs);
 }
 
 async function toggleFavorite(targetId, targetType) {
-    const ref = db.collection("favorites").doc(favoriteDocId(targetId));
+    const ref = rtdb.ref(`favorites/${favoriteDocId(targetId)}`);
     try {
         if (favoritesSet.has(targetId)) {
-            await ref.delete();
+            await ref.remove();
             showToast("Retiré des favoris");
         } else {
-            await ref.set({ ownerId: currentUser.uid, targetId, targetType, addedAt: FieldValue.serverTimestamp() });
+            await ref.set({ ownerId: currentUser.uid, targetId, targetType, addedAt: RTDB_TS });
             showToast("Ajouté aux favoris");
         }
     } catch (err) {
@@ -2021,21 +2207,57 @@ function groupAvatarIcon() {
 
 function listenGroups(uid) {
     if (unsubscribeGroups) unsubscribeGroups();
-    let first = true;
 
-    unsubscribeGroups = db.collection("groups").where("members", "array-contains", uid).onSnapshot((snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-            const id = change.doc.id;
-            if (change.type === "removed") { removeGroup(id); return; }
-            const group = { ...change.doc.data(), id };
-            if (change.type === "added") addGroupConversation(group);
-            else updateGroupEntry(group);
-        });
+    // Index « userGroups/{uid}/{groupId} » : remplace la requête array-contains de Firestore.
+    // Pour chaque groupe de l'index, on écoute le nœud groups/{groupId} (nom, membres, clés…).
+    const indexRef = rtdb.ref(`userGroups/${uid}`);
+    const watchers = new Map(); // groupId -> { ref, cb }
+
+    const refreshUI = () => {
         updateEmptyState();
         applySearchFilter();
         scheduleSort();
-        if (first) first = false;
-    }, (err) => console.error("Erreur chargement des groupes :", err));
+    };
+
+    const onAdded = (snap) => {
+        const id = snap.key;
+        if (watchers.has(id)) return;
+        const gRef = rtdb.ref(`groups/${id}`);
+        let known = false;
+        const cb = (gs) => {
+            if (!gs.exists()) {
+                if (known) { known = false; removeGroup(id); refreshUI(); }
+                return;
+            }
+            const val = gs.val() || {};
+            const group = { ...val, id, members: Object.keys(val.members || {}) };
+            if (!known) { known = true; addGroupConversation(group); }
+            else updateGroupEntry(group);
+            refreshUI();
+        };
+        gRef.on("value", cb, (err) => {
+            if (watchers.has(id)) console.error("Erreur chargement du groupe :", err);
+        });
+        watchers.set(id, { gRef, cb });
+    };
+
+    const onRemoved = (snap) => {
+        const id = snap.key;
+        const w = watchers.get(id);
+        if (w) { w.gRef.off("value", w.cb); watchers.delete(id); }
+        removeGroup(id);
+        refreshUI();
+    };
+
+    indexRef.on("child_added", onAdded, (err) => console.error("Erreur chargement des groupes :", err));
+    indexRef.on("child_removed", onRemoved);
+
+    unsubscribeGroups = () => {
+        indexRef.off("child_added", onAdded);
+        indexRef.off("child_removed", onRemoved);
+        watchers.forEach((w) => w.gRef.off("value", w.cb));
+        watchers.clear();
+    };
 }
 
 function addGroupConversation(group) {
@@ -2066,9 +2288,12 @@ function addGroupConversation(group) {
     };
     groupState.set(group.id, state);
 
-    const groupRef = db.collection("groups").doc(group.id);
+    // Fenêtre d'historique : un membre ajouté après coup ne lit que depuis sa date d'entrée
+    const myHist = group.historyFrom && group.historyFrom[currentUser.uid];
+    const histMs = myHist ? ((toDate(myHist) || new Date(0)).getTime()) : 0;
     state.unsubs.push(
-        groupRef.collection("messages").orderBy("timestamp", "desc").limit(20).onSnapshot(
+        rtdbListenQuery(
+            rtdbLastMessagesQuery(`groupMessages/${group.id}`, histMs), { desc: true },
             (snap) => handleGroupLastMessages(state, snap),
             (err) => console.error("Erreur écoute messages de groupe :", err)
         )
@@ -2126,10 +2351,14 @@ async function handleGroupLastMessages(state, snap) {
             return !!t && Date.now() - t.getTime() < 60000;
         });
         if (fresh.length && !(activeChatUserId === state.id && isActiveChatVisible())) {
-            const target = fresh[fresh.length - 1].doc.data();
-            notifyNewMessage({ uid: state.id, username: state.name, isGroup: true }, `${target.senderName || "Quelqu'un"} : ${target.text || ""}`, fresh.length);
+            const targetDoc = fresh[fresh.length - 1].doc;
+            const target = targetDoc.data();
+            const targetClear = (await decryptGroupMsg(targetDoc.id, target, state)).text;   // les messages de groupe sont chiffrés
+            notifyNewMessage({ uid: state.id, username: state.name, isGroup: true }, `${target.senderName || "Quelqu'un"} : ${targetClear}`, fresh.length);
         }
     }
+    // Aperçu : le texte du groupe est chiffré (AES), on le déchiffre avant de l'afficher
+    const decrypted = await decryptGroupMsg(last.id, msg, state);
     if (seq !== state.msgSeq) return;
     state.initialized = true;
 
@@ -2137,7 +2366,7 @@ async function handleGroupLastMessages(state, snap) {
     state.lastTs = date ? date.getTime() : 0;
     state.timeText = date ? formatListTime(date) : "";
     const who = msg.senderId === me ? "Vous" : (msg.senderName || "?");
-    state.preview = `${who} : ${(msg.text || "").replace(/\s+/g, " ")}`;
+    state.preview = `${who} : ${(decrypted.text || "").replace(/\s+/g, " ")}`;
     refreshGroupUI(state);
     updateTotalUnread();
     scheduleSort();
@@ -2234,12 +2463,11 @@ async function selectGroupChat(group) {
 
     // Fenêtre d'historique : si j'ai rejoint le groupe après coup, je ne peux (et ne dois) demander
     // que les messages à partir de ma date d'entrée. Les membres fondateurs n'ont pas cette limite.
-    let messagesQuery = db.collection("groups").doc(group.id).collection("messages").orderBy("timestamp", "asc");
+    let messagesQuery = rtdb.ref(`groupMessages/${group.id}`).orderByChild("timestamp");
     const myHistoryFrom = chat.historyFrom && chat.historyFrom[currentUser.uid];
-    if (myHistoryFrom) messagesQuery = messagesQuery.where("timestamp", ">=", toDate(myHistoryFrom) || new Date(0));
+    if (myHistoryFrom) messagesQuery = messagesQuery.startAt((toDate(myHistoryFrom) || new Date(0)).getTime());
 
-    unsubscribeMessages = messagesQuery
-        .onSnapshot((snapshot) => {
+    unsubscribeMessages = rtdbListenQuery(messagesQuery, {}, (snapshot) => {
             if (activeChat !== chat) return;
             chat.lastSnapshot = snapshot;
             renderGroupMessages(snapshot);
@@ -2393,11 +2621,11 @@ async function sendGroupMessage(rawText) {
 
         const { iv, cipherText } = await E2EE.encryptGroupText(rawText, groupKey);
 
-        await db.collection("groups").doc(chat.id).collection("messages").add({
+        await rtdbPushMessage(rtdb.ref(`groupMessages/${chat.id}`), {
             senderId: me,
             senderName: myUsername,
             iv, cipherText,
-            timestamp: FieldValue.serverTimestamp()
+            timestamp: RTDB_TS
         });
     } catch (err) {
         console.error("Erreur envoi message de groupe :", err);
@@ -2464,11 +2692,20 @@ function openCreateGroupDialog() {
             }
             if (!groupKeys[currentUser.uid]) throw new Error("Impossible de chiffrer la clé du groupe pour vous-même.");
 
-            const doc = await db.collection("groups").add({
-                name, members, createdBy: currentUser.uid, createdAt: FieldValue.serverTimestamp(), groupKeys
+            // Création atomique : le groupe + l'index userGroups de chaque membre
+            const groupId = rtdb.ref("groups").push().key;
+            const membersObj = {};
+            const updates = {};
+            members.forEach((uid) => {
+                membersObj[uid] = true;
+                updates[`userGroups/${uid}/${groupId}`] = true;
             });
+            updates[`groups/${groupId}`] = {
+                name, members: membersObj, createdBy: currentUser.uid, createdAt: RTDB_TS, groupKeys
+            };
+            await rtdb.ref().update(updates);
             close();
-            setTimeout(() => openGroupChat(doc.id), 150); // laisse le temps à l'écouteur de créer l'entrée
+            setTimeout(() => openGroupChat(groupId), 150); // laisse le temps à l'écouteur de créer l'entrée
         } catch (err) {
             console.error("Erreur création du groupe :", err);
             showToast("Création impossible", "Vérifiez votre connexion et réessayez.");
@@ -2609,21 +2846,18 @@ async function addMembersToGroup(groupId, newUids) {
         if (readyUids.length === 0) throw new Error("Clé publique introuvable pour ces contacts.");
 
         // Fenêtre d'historique : le nouveau membre voit à partir de « maintenant moins X jours »,
-        // jamais avant la création du groupe. Cette date est ensuite imposée par les règles Firestore,
-        // pas seulement par l'affichage : Firestore refusera de lui envoyer ce qui est plus ancien.
-        const cutoff = new Date(Date.now() - GROUP_HISTORY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-        const groupKeysUpdate = {};
-        const historyFromUpdate = {};
+        // jamais avant la création du groupe. Cette date est ensuite imposée par les règles Realtime Database,
+        // pas seulement par l'affichage : la base refusera de lui envoyer ce qui est plus ancien.
+        const cutoff = Date.now() - GROUP_HISTORY_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+        const updates = {};
         for (const uid of readyUids) {
-            groupKeysUpdate[`groupKeys.${uid}`] = await E2EE.wrapGroupKeyForMember(groupKey, newPubKeys[uid]);
-            historyFromUpdate[`historyFrom.${uid}`] = cutoff;
+            updates[`groups/${groupId}/groupKeys/${uid}`] = await E2EE.wrapGroupKeyForMember(groupKey, newPubKeys[uid]);
+            updates[`groups/${groupId}/historyFrom/${uid}`] = cutoff;
+            updates[`groups/${groupId}/members/${uid}`] = true;
+            updates[`userGroups/${uid}/${groupId}`] = true;
         }
 
-        await db.collection("groups").doc(groupId).update({
-            ...groupKeysUpdate,
-            ...historyFromUpdate,
-            members: FieldValue.arrayUnion(...readyUids)
-        });
+        await rtdb.ref().update(updates);
 
         showToast("Membres ajoutés", `Ils voient désormais les ${GROUP_HISTORY_WINDOW_DAYS} derniers jours de discussion.`);
     } catch (err) {
@@ -2646,8 +2880,9 @@ async function confirmLeaveGroup() {
     if (!ok) return;
 
     try {
-        await db.collection("groups").doc(chat.id).update({
-            members: FieldValue.arrayRemove(currentUser.uid)
+        await rtdb.ref().update({
+            [`groups/${chat.id}/members/${currentUser.uid}`]: null,
+            [`userGroups/${currentUser.uid}/${chat.id}`]: null
         });
         closeActiveChat();
         showToast("Groupe quitté");
@@ -2870,27 +3105,32 @@ async function selectContact(targetUser) {
     updateComposerState();
 
     // Présence du correspondant (battement de cœur) + rafraîchissement du texte toutes les 30 s
-    unsubscribeStatus = db.collection("presence").doc(peerUid).onSnapshot((doc) => {
+    const presenceRef = rtdb.ref(`presence/${peerUid}`);
+    const onPresence = (snap) => {
         if (activeChat !== chat) return;
-        chat.peerPresence = doc.exists ? doc.data({ serverTimestamps: "estimate" }) : null;
+        chat.peerPresence = snap.exists() ? snap.val() : null;
         renderPeerStatus();
-    }, (err) => {
+    };
+    presenceRef.on("value", onPresence, (err) => {
         console.warn("Présence indisponible :", err);
         if (activeChat === chat) { chat.peerPresence = null; renderPeerStatus(); }
     });
+    unsubscribeStatus = () => presenceRef.off("value", onPresence);
     statusTicker = setInterval(renderPeerStatus, 30000);
     renderPeerStatus();
 
     if (!getMyPrivateKey()) await initUserKeys(currentUser);
     if (activeChat !== chat) return;
 
-    unsubscribeMessages = db.collection("chats").doc(chatId).collection("messages")
-        .orderBy("timestamp", "asc")
-        .onSnapshot((snapshot) => {
+    unsubscribeMessages = rtdbListenQuery(
+        rtdb.ref(`chatMessages/${chatId}`).orderByChild("timestamp"), {},
+        (snapshot) => {
             if (activeChat !== chat) return;
             chat.lastSnapshot = snapshot;
             renderMessages(snapshot);
-        }, (err) => console.error("Erreur lecture messages :", err));
+        },
+        (err) => console.error("Erreur lecture messages :", err)
+    );
 }
 
 function encryptionNotice() {
@@ -3044,23 +3284,24 @@ function markActiveChatRead() {
         const m = d.data();
         if (m.receiverId !== me || isMsgHidden(m)) return;
         if ((m.status || "read") === "read" || d.metadata.hasPendingWrites) return;
-        pairs.push([d.ref, { status: "read", readAt: FieldValue.serverTimestamp() }]);
+        pairs.push([d.ref, { status: "read", readAt: RTDB_TS }]);
     });
     if (pairs.length) batchUpdate(pairs);
 
     const state = convState.get(chat.uid);
     if (pairs.length || (state && state.unread > 0)) {
-        db.collection("chats").doc(chat.chatId)
-            .set({ [`unreadCount_${me}`]: 0 }, { merge: true })
-            .catch(console.error);
+        rtdb.ref(`chats/${chat.chatId}/unreadCount_${me}`).set(0).catch(console.error);
     }
 }
 
 async function batchUpdate(pairs) {
     for (let i = 0; i < pairs.length; i += 400) {
-        const batch = db.batch();
-        pairs.slice(i, i + 400).forEach(([ref, data]) => batch.update(ref, data));
-        try { await batch.commit(); } catch (err) { console.warn("Mise à jour groupée impossible :", err); }
+        const updates = {};
+        pairs.slice(i, i + 400).forEach(([ref, data]) => {
+            const base = rtdbPathOf(ref);
+            Object.keys(data).forEach((k) => { updates[`${base}/${k}`] = data[k]; });
+        });
+        try { await rtdb.ref().update(updates); } catch (err) { console.warn("Mise à jour groupée impossible :", err); }
     }
 }
 
@@ -3137,10 +3378,10 @@ async function deleteMessage(id, scope, info) {
     if (!peer) return;
 
     if (activeChat && activeChat.isGroup) {
-        const msgRef = db.collection("groups").doc(peer).collection("messages").doc(id);
+        const msgRef = rtdb.ref(`groupMessages/${peer}/${id}`);
         try {
-            if (scope === "everyone") await msgRef.delete();
-            else await msgRef.update({ deletedFor: FieldValue.arrayUnion(me) });
+            if (scope === "everyone") await msgRef.remove();
+            else await msgRef.child(`deletedFor/${me}`).set(true);
         } catch (err) {
             console.error("Erreur de suppression :", err);
             showToast("Suppression impossible", "Vérifiez votre connexion et réessayez.");
@@ -3148,26 +3389,25 @@ async function deleteMessage(id, scope, info) {
         return;
     }
 
-    const chatRef = db.collection("chats").doc(getChatId(me, peer));
-    const msgRef = chatRef.collection("messages").doc(id);
+    const chatId = getChatId(me, peer);
+    const chatRef = rtdb.ref(`chats/${chatId}`);
+    const msgRef = rtdb.ref(`chatMessages/${chatId}/${id}`);
 
     try {
         if (scope === "everyone") {
-            await msgRef.delete();
+            await msgRef.remove();
             decryptCache.delete(id);
 
             // Rien ne doit rester : on corrige le compteur du destinataire et on efface l'ancien aperçu stocké
-            const key = `unreadCount_${peer}`;
-            await db.runTransaction(async (tx) => {
-                const snap = await tx.get(chatRef);
-                if (!snap.exists) return;
-                const update = { lastMessage: FieldValue.delete() };
-                const count = snap.data()[key] || 0;
-                if (info.status !== "read" && !info.suppressed && count > 0) update[key] = count - 1;
-                tx.update(chatRef, update);
-            });
+            const ops = [chatRef.child("lastMessage").remove()];
+            if (info.status !== "read" && !info.suppressed) {
+                ops.push(chatRef.child(`unreadCount_${peer}`).transaction(
+                    (count) => (typeof count === "number" && count > 0 ? count - 1 : count)
+                ));
+            }
+            await Promise.all(ops);
         } else {
-            await msgRef.update({ deletedFor: FieldValue.arrayUnion(me) });
+            await msgRef.child(`deletedFor/${me}`).set(true);
         }
     } catch (err) {
         console.error("Erreur de suppression :", err);
@@ -3211,21 +3451,21 @@ async function submitEdit() {
     const peer = activeChatUserId;
     const isGroup = activeChat && activeChat.isGroup;
     const msgRef = isGroup
-        ? db.collection("groups").doc(peer).collection("messages").doc(id)
-        : db.collection("chats").doc(getChatId(currentUser.uid, peer)).collection("messages").doc(id);
+        ? rtdb.ref(`groupMessages/${peer}/${id}`)
+        : rtdb.ref(`chatMessages/${getChatId(currentUser.uid, peer)}/${id}`);
 
     try {
         if (isGroup) {
             const groupKey = await getGroupKey(activeChat);
             if (!groupKey) throw new Error("Clé de groupe indisponible.");
             const { iv, cipherText } = await E2EE.encryptGroupText(newText, groupKey);
-            await msgRef.update({ iv, cipherText, edited: true, editedAt: FieldValue.serverTimestamp() });
+            await msgRef.update({ iv, cipherText, edited: true, editedAt: RTDB_TS });
         } else {
             const { iv, cipherText, keys } = await encryptForBoth(newText, peer);
             await msgRef.update({
                 iv, cipherText, keys,
                 edited: true,
-                editedAt: FieldValue.serverTimestamp()
+                editedAt: RTDB_TS
             });
         }
         cancelEdit();
@@ -3285,7 +3525,8 @@ async function sendMessage() {
 
     const me = currentUser.uid;
     const peer = activeChatUserId;
-    const chatDocRef = db.collection("chats").doc(getChatId(me, peer));
+    const chatId = getChatId(me, peer);
+    const chatRef = rtdb.ref(`chats/${chatId}`);
 
     try {
         const { iv, cipherText, keys } = await encryptForBoth(rawText, peer);
@@ -3293,19 +3534,21 @@ async function sendMessage() {
         // S'il vous a bloqué, le message reste « envoyé » (✓) sans jamais être remis, sans le signaler
         const suppressed = blockedMe.has(peer);
 
-        await chatDocRef.collection("messages").add({
+        await rtdbPushMessage(rtdb.ref(`chatMessages/${chatId}`), {
             senderId: me,
             receiverId: peer,
             iv, cipherText, keys,
             status: "sent",
             ...(suppressed ? { suppressed: true } : {}),
-            timestamp: FieldValue.serverTimestamp()
+            timestamp: RTDB_TS
         });
 
-        // On ne stocke plus d'aperçu du message dans le document de chat (rien ne subsiste après suppression)
-        const chatUpdate = { lastSenderId: me, timestamp: FieldValue.serverTimestamp() };
-        if (!suppressed) chatUpdate[`unreadCount_${peer}`] = FieldValue.increment(1);
-        await chatDocRef.set(chatUpdate, { merge: true });
+        // On ne stocke plus d'aperçu du message dans le nœud de chat (rien ne subsiste après suppression)
+        await chatRef.update({ lastSenderId: me, timestamp: RTDB_TS });
+        if (!suppressed) {
+            // Équivalent de FieldValue.increment(1) : transaction RTDB
+            await chatRef.child(`unreadCount_${peer}`).transaction((count) => (typeof count === "number" ? count : 0) + 1);
+        }
     } catch (error) {
         console.error("Erreur lors de l'envoi du message chiffré :", error);
         if (!messageInput.value) messageInput.value = rawText;

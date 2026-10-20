@@ -2,6 +2,7 @@
 const firebaseConfig = {
   apiKey: "AIzaSyAWQk-ggRbQbseTNJFQccVjAPpeWP5eD1I",
   authDomain: "chat-80cef.firebaseapp.com",
+  databaseURL: "https://chat-80cef-default-rtdb.firebaseio.com",
   projectId: "chat-80cef",
   storageBucket: "chat-80cef.firebasestorage.app",
   messagingSenderId: "275397956073",
@@ -13,7 +14,7 @@ if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 const auth = firebase.auth();
-const db = firebase.firestore();
+const rtdb = firebase.database();
 
 const signupForm = document.querySelector("form");
 const usernameInput = document.getElementById("username");
@@ -70,7 +71,7 @@ function setLoadingState(isLoading) {
     }
 }
 
-// Remplace le bloc d'inscription (signupForm.addEventListener) par :
+// Bloc d'inscription
 if (signupForm) {
     signupForm.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -103,51 +104,60 @@ if (signupForm) {
 
         setLoadingState(true);
 
+        let createdUser = null;
+
         try {
-            // 1. Création compte utilisateur dans Firebase Auth
+            // 1. Génération des clés E2EE (avant de créer le compte, pour ne pas laisser
+            //    de compte orphelin si le chiffrement est indisponible)
+            if (typeof E2EE === "undefined" || !E2EE.generateKeyPair || !E2EE.exportEncryptedPrivateKey) {
+                throw new Error("Module de chiffrement indisponible (crypto-helper.js non chargé).");
+            }
+
+            const keys = await E2EE.generateKeyPair();
+            const rawPrivateKey = keys.privateKeyString;
+            const publicKeyStr = keys.publicKeyString;
+
+            // Chiffrement de la clé privée avec le mot de passe de l'utilisateur
+            const encryptedPrivateKey = await E2EE.exportEncryptedPrivateKey(rawPrivateKey, password);
+
+            // 2. Création compte utilisateur dans Firebase Auth
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
             const user = userCredential.user;
+            createdUser = user;
 
             // Update du profil Firebase Auth avec le displayName
             await user.updateProfile({ displayName: username });
 
-            // 2. Génération des clés E2EE
-            let publicKeyStr = "";
-            let encryptedPrivateKey = "";
-            let rawPrivateKey = "";
-
-            if (typeof E2EE !== "undefined" && E2EE.generateKeyPair) {
-                const keys = await E2EE.generateKeyPair();
-                rawPrivateKey = typeof keys.privateKeyString === "string" ? keys.privateKeyString : JSON.stringify(keys.privateKeyString);
-                publicKeyStr = typeof keys.publicKeyString === "string" ? keys.publicKeyString : JSON.stringify(keys.publicKeyString);
-
-                // Chiffrement de la clé privée avec le mot de passe de l'utilisateur
-                if (E2EE.exportEncryptedPrivateKey) {
-                    encryptedPrivateKey = await E2EE.exportEncryptedPrivateKey(rawPrivateKey, password);
-                } else {
-                    encryptedPrivateKey = rawPrivateKey;
-                }
-            }
-
-            // 3. Sauvegarde dans Firestore
-            await db.collection("users").doc(user.uid).set({
+            // 3. Sauvegarde dans Realtime Database (écriture atomique multi-chemins) :
+            //    - users/{uid}    : profil public (lisible par les autres utilisateurs)
+            //    - userKeys/{uid} : clé privée chiffrée (lisible uniquement par son propriétaire)
+            const updates = {};
+            updates[`users/${user.uid}`] = {
                 uid: user.uid,
                 username: username,
                 email: email,
                 publicKey: publicKeyStr,
-                encryptedPrivateKey: encryptedPrivateKey,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
+                status: "offline",
+                lastSeen: firebase.database.ServerValue.TIMESTAMP,
+                createdAt: firebase.database.ServerValue.TIMESTAMP
+            };
+            updates[`userKeys/${user.uid}`] = {
+                encryptedPrivateKey: encryptedPrivateKey
+            };
+            await rtdb.ref().update(updates);
 
             // 4. Sauvegarde de la clé privée locale pour cet appareil
-            if (rawPrivateKey) {
-                localStorage.setItem(`e2ee_private_${user.uid}`, rawPrivateKey);
-            }
+            localStorage.setItem(`e2ee_private_${user.uid}`, rawPrivateKey);
 
             // Redirection vers l'application
             window.location.href = "index.html";
 
         } catch (error) {
+            // Si le compte Auth a été créé mais que l'écriture a échoué, on le supprime
+            // pour permettre de réessayer avec le même e-mail.
+            if (createdUser) {
+                try { await createdUser.delete(); } catch (delErr) { console.warn("Nettoyage du compte impossible :", delErr); }
+            }
             setLoadingState(false);
             console.error("Erreur Inscription :", error);
             showError("Erreur : " + error.message);
